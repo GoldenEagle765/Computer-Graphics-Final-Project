@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+
+<script id="vertex-shader" type="x-shader/x-vertex">
+
+// assume both position and normal are in homogeneous form
+
+attribute vec4 vPosition, vNormal;
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+varying vec3 L, N, V;
+uniform vec4 lightPosition;
+uniform mat4 translation;
+uniform mat4 electronTransform;
+
+void main()
+{
+    //Diffuse
+    //Calculate L
+
+    vec4 nm = vNormal;
+    nm.w = 1.0;     //To calculate the lighting vector, we need to convert the normal position
+    vec3 pos = (modelViewMatrix * nm).xyz;
+    L = normalize(lightPosition.xyz - pos);
+
+    //Calculate N
+    //Here, we need to convert the normal direction (not the position)
+    N = normalize(modelViewMatrix * vNormal).xyz;
+
+    //Specular
+    //V = origin - pos = -pos
+    V = normalize(-pos);
+
+    gl_Position = projectionMatrix * modelViewMatrix *electronTransform*translation *  vPosition;
+}
+</script>
+
+<script id="fragment-shader" type="x-shader/x-fragment">
+
+precision mediump float;
+
+uniform vec4 lightDiffuse, lightSpecular, lightAmbient;
+uniform vec4 materialDiffuse, materialSpecular, materialAmbient;
+uniform float shininess;
+varying vec3 L, N, V;
+
+void main()
+{
+    //Diffuse
+    //Id = Ld kd dot(l • n)
+    vec4 diffuse = lightDiffuse * materialDiffuse * dot(L, N);
+
+    //Specular
+    //r = (2 (l · n ) n) - l
+    vec3 R = 2.0 * (dot(L, N) * N) - L;
+
+    //Is = Ls Ks dot(V, R)^a
+    vec4 specular = lightSpecular * materialSpecular * pow(max(dot(V, R), 0.0), shininess);
+
+    //Ambient
+    //Ia = Laka
+    vec4 ambient = lightAmbient * materialAmbient;
+
+    vec4 fColor = diffuse + specular + ambient;
+	fColor.a = 1.0;
+
+    gl_FragColor = fColor;
+}
+</script>
+
+<script type="text/javascript" src="lib/webgl-utils.js"></script>
+<script type="text/javascript" src="lib/initShaders.js"></script>
+
+<script type="text/javascript" src="lib/MV.js"></script>
+<script type="text/javascript" src="shadedSphere1.js"></script>
+
+<body>
+<canvas id="gl-canvas" width="512" height="512">
+Epic fail!
+</canvas>
+</body>
+</html>
