@@ -31,7 +31,7 @@ void main()
     //V = origin - pos = -pos
     V = normalize(-pos);
 
-    gl_Position = projectionMatrix * modelViewMatrix *electronTransform*translation *  vPosition;
+    gl_Position = projectionMatrix * modelViewMatrix * translation *  vPosition;
 }
 </script>
 

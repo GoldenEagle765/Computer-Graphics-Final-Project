@@ -6,13 +6,20 @@ let numTimesToSubdivide = 4;
 
 let index = 0;
 
-let nucleusPosition = vec3[0, 0, 0];
+let nucleusPositions = [vec3(0, 0, 0), vec3(0, 0, 1.5), vec3(1.5, 0, 0), vec3(-1.5, 0, 0), vec3(0, 1.5, 0), vec3(0, -1.5, 0), vec3(0, 0, -1.5)];
+let nucleusTypes = [0,0,1,1]; // 0 is neutron, 1 is proton
+let rootChildren = 6;
+let branchChildren = 3;
+let nucleus;
 
-let electronPositions = [vec3(0, 0, 0), vec3(5, 0, 0), vec3(-5, 0, 0)];
+let electronPositions = [vec3(5, 0, 0), vec3(-5, 0, 0)];
+let electronSize = 0.5;
 
 let electronTransform;
 let isAnimating = true;
 let theta = 0;
+let alpha = 0;
+let beta = 0;
 
 let pointsArray = [];
 let normalsArray = [];
@@ -48,6 +55,16 @@ let modelViewMatrixLoc, projectionMatrixLoc;
 let eye;
 let at = vec3(0.0, 0.0, 0.0);
 let up = vec3(0.0, 1.0, 0.0);
+
+function Tree(root) {
+    this.root = root;
+}
+
+function Particle(matrix, type) {
+    this.children = [];
+    this.matrix = matrix;
+    this.type = type;
+}
 
 function triangle(a, b, c) {
 
@@ -134,8 +151,8 @@ window.onload = function init() {
 
     tetrahedron(va, vb, vc, vd, numTimesToSubdivide);
 
-    //Pass in vertex data
-
+    // Build nucleus hierarchy
+    buildNucleus();
 
     //Pass in transformation matrices
     modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
@@ -160,6 +177,8 @@ function render() {
 
     if (isAnimating) {
         theta += 0.5;
+        alpha += 0.3;
+        beta += 0.2;
     }
 
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -174,42 +193,42 @@ function render() {
 
 
     drawElectrons();
-    //drawNucleus();
+    drawNucleus();
 
     requestAnimFrame(render);
 }
 
 function buildNucleus() {
+    shuffle(nucleusTypes);
+    let root = new Particle(translate(nucleusPositions[0][0], nucleusPositions[0][1], nucleusPositions[0][2]), nucleusTypes[0]);
+    nucleus = new Tree(root);
+    let queue = []
 
+    for (let i = 0; i < rootChildren; i++) queue.push(root);
+
+    for (let i = 1; i < nucleusTypes.length; i++) {
+        let type = nucleusTypes[i];
+        let parent = queue.shift();
+        let matrix = translate(nucleusPositions[i][0], nucleusPositions[i][1], nucleusPositions[i][2]);
+
+        let p = new Particle(matrix, type);
+        parent.children.push(p);
+
+        for (let j = 0; j < branchChildren; j++) queue.push(p);
+    }
 }
 
 function drawElectrons() {
     for (let j = 0; j < electronPositions.length; j++) {
-        let vBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, flatten(pointsArray), gl.STATIC_DRAW);
+        pushSphere();
 
-        let vPosition = gl.getAttribLocation(program, "vPosition");
-        gl.vertexAttribPointer(vPosition, 4, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(vPosition);
+        let translation = translate(electronPositions[j][0], electronPositions[j][1], electronPositions[j][2]);
+        translation = mult(rotateZ(theta),
+            mult(translation,
+                scalem(electronSize, electronSize, electronSize)));
 
-        //Pass in normal data
-        let vNormal = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, vNormal);
-        gl.bufferData(gl.ARRAY_BUFFER, flatten(normalsArray), gl.STATIC_DRAW);
-
-        let vNormalPosition = gl.getAttribLocation(program, "vNormal");
-        gl.vertexAttribPointer(vNormalPosition, 4, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(vNormalPosition);
-
-
-        translation = translate(electronPositions[j][0], electronPositions[j][1], electronPositions[j][2]);
         let translationU = gl.getUniformLocation(program, "translation");
         gl.uniformMatrix4fv(translationU, false, flatten(translation));
-
-        electronTransform = rotateZ(theta);
-        let electronTransformU = gl.getUniformLocation(program, "electronTransform");
-        gl.uniformMatrix4fv(electronTransformU, false, flatten(electronTransform));
 
         gl.drawArrays(gl.TRIANGLES, 0, pointsArray.length);
 
@@ -217,5 +236,58 @@ function drawElectrons() {
 }
 
 function drawNucleus() {
+    let rotationMatrix = mult(rotateX(alpha), rotateY(beta))
+    let queueMatrix = [translate(0,0,0)];
+    let queueParticle = [nucleus.root];
 
+    while (queueParticle.length > 0) {
+        let particle = queueParticle.shift();
+        let prevMatrix = queueMatrix.shift();
+
+        pushSphere();
+
+        matrix = mult(rotationMatrix,
+            mult(prevMatrix, particle.matrix));
+
+        let translationU = gl.getUniformLocation(program, "translation");
+        gl.uniformMatrix4fv(translationU, false, flatten(matrix));
+        gl.drawArrays(gl.TRIANGLES, 0, pointsArray.length);
+
+        for (let i = 0; i < particle.children.length; i++) {
+            queueMatrix.push(particle.matrix);
+            queueParticle.push(particle.children[i])
+        }
+    }
+}
+
+function shuffle(array) {
+    let currentIndex = array.length;
+
+    while (currentIndex !== 0) {
+
+        let randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex--;
+
+        [array[currentIndex], array[randomIndex]] = [
+            array[randomIndex], array[currentIndex]];
+    }
+}
+
+function pushSphere() {
+    let vBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(pointsArray), gl.STATIC_DRAW);
+
+    let vPosition = gl.getAttribLocation(program, "vPosition");
+    gl.vertexAttribPointer(vPosition, 4, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(vPosition);
+
+    //Pass in normal data
+    let vNormal = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vNormal);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(normalsArray), gl.STATIC_DRAW);
+
+    let vNormalPosition = gl.getAttribLocation(program, "vNormal");
+    gl.vertexAttribPointer(vNormalPosition, 4, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(vNormalPosition);
 }
