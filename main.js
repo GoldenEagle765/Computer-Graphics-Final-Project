@@ -1,6 +1,7 @@
 let canvas;
 let gl;
 let program;
+let port = 6767;
 
 let numTimesToSubdivide = 4;
 
@@ -20,9 +21,13 @@ let isAnimating = true;
 let theta = 0;
 let alpha = 0;
 let beta = 0;
+let satelliteTheta = 0;
+let satelliteX = -10;
+let satelliteY = -10;
 
 let pointsArray = [];
 let normalsArray = [];
+let models = [];
 
 //Make sure these are set properly, 
 //or sphere could appear black
@@ -39,7 +44,7 @@ let vb = vec4(0.0, 0.942809, 0.333333, 1);
 let vc = vec4(-0.816497, -0.471405, 0.333333, 1);
 let vd = vec4(0.816497, -0.471405, 0.333333, 1);
 
-let lightPosition = vec4(1.0, 0.0, -1.0, 1.0);  //eye coordinates
+let lightPosition = vec4(0.0, 0.0, 5.0, 1.0);  //eye coordinates
 let lightAmbient = vec4(0.2, 0.2, 0.2, 1.0);
 let lightDiffuse = vec4(1.0, 1.0, 1.0, 1.0);
 let lightSpecular = vec4(1.0, 1.0, 1.0, 1.0);
@@ -129,7 +134,6 @@ function tetrahedron(a, b, c, d, n) {
 }
 
 function handleKey(evt) {
-    console.log("a");
     let key = evt.key.toLowerCase();
 
     if (key == "a") {
@@ -166,6 +170,10 @@ window.onload = function init() {
     
     window.addEventListener("keydown", handleKey);
 
+    // Load objects
+    loadObject("./objects/Satellite/Satellite.obj", "./objects/Satellite/Satellite.mtl");
+    console.log(models[0]);
+
     tetrahedron(va, vb, vc, vd, numTimesToSubdivide);
 
     // Build nucleus hierarchy
@@ -177,14 +185,10 @@ window.onload = function init() {
 
     //Pass in parameters for lighting equations
     gl.uniform4fv(gl.getUniformLocation(program, "lightDiffuse"), flatten(lightDiffuse));
-    gl.uniform4fv(gl.getUniformLocation(program, "materialDiffuse"), flatten(materialDiffuse));
     gl.uniform4fv(gl.getUniformLocation(program, "lightSpecular"), flatten(lightSpecular));
-    gl.uniform4fv(gl.getUniformLocation(program, "materialSpecular"), flatten(materialSpecular));
     gl.uniform4fv(gl.getUniformLocation(program, "lightAmbient"), flatten(lightAmbient));
-    gl.uniform4fv(gl.getUniformLocation(program, "materialAmbient"), flatten(materialAmbient));
 
     gl.uniform4fv(gl.getUniformLocation(program, "lightPosition"), flatten(lightPosition));
-    gl.uniform1f(gl.getUniformLocation(program, "shininess"), materialShininess);
 
     //var vTexCoord = gl.getAttribLocation( program, "vTexCoord" );
     //gl.vertexAttribPointer( vTexCoord, 2, gl.FLOAT, false, 0, 0 );
@@ -200,6 +204,15 @@ function render() {
         theta += 0.5;
         alpha += 0.3;
         beta += 0.2;
+        satelliteTheta += 0.6;
+        satelliteX += 0.05;
+        if (satelliteX > 50) {
+            satelliteX = -50
+        }
+        satelliteY -= 0.03;
+        if (satelliteY < -50) {
+            satelliteY = 50
+        }
     }
 
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -212,6 +225,13 @@ function render() {
     gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(modelViewMatrix));
     gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
 
+    drawObjects();
+
+    //Pass in parameters for lighting equations
+    gl.uniform4fv(gl.getUniformLocation(program, "materialDiffuse"), flatten(materialDiffuse));
+    gl.uniform4fv(gl.getUniformLocation(program, "materialSpecular"), flatten(materialSpecular));
+    gl.uniform4fv(gl.getUniformLocation(program, "materialAmbient"), flatten(materialAmbient));
+    gl.uniform1f(gl.getUniformLocation(program, "shininess"), materialShininess);
 
     drawElectrons();
     drawNucleus();
@@ -236,6 +256,63 @@ function buildNucleus() {
         parent.children.push(p);
 
         for (let j = 0; j < branchChildren; j++) queue.push(p);
+    }
+}
+
+function drawObjects() {
+    for (let i = 0; i < models.length; i++) {
+        let object = models[i];
+        let numModels = object['number_models'];
+
+        for (let j = 0; j < numModels; j++) {
+            let model = object[j];
+            let triangles = model.triangles;
+
+            let vertices = [];
+            let normals = [];
+
+            for (let k = 0; k < triangles.vertices.length; k+=3) {
+                vertices.push(vec4(triangles.vertices[k], triangles.vertices[k+1], triangles.vertices[k+2], 1));
+                normals.push(vec4(triangles.flat_normals[k], triangles.flat_normals[k+1], triangles.flat_normals[k+2], 0));
+            }
+
+            let vBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, flatten(vertices), gl.STATIC_DRAW);
+
+            let vPosition = gl.getAttribLocation(program, "vPosition");
+            gl.vertexAttribPointer(vPosition, 4, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(vPosition);
+
+            //Pass in normal data
+            let vNormal = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, vNormal);
+            gl.bufferData(gl.ARRAY_BUFFER, flatten(normals), gl.STATIC_DRAW);
+
+            let vNormalPosition = gl.getAttribLocation(program, "vNormal");
+            gl.vertexAttribPointer(vNormalPosition, 4, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(vNormalPosition);
+
+            //Pass in parameters for lighting equations
+
+            gl.uniform4fv(gl.getUniformLocation(program, "materialDiffuse"), flatten(triangles.material.Kd));
+            gl.uniform4fv(gl.getUniformLocation(program, "materialSpecular"), flatten(triangles.material.Ks));
+            gl.uniform4fv(gl.getUniformLocation(program, "materialAmbient"), flatten(triangles.material.Ka));
+            gl.uniform1f(gl.getUniformLocation(program, "shininess"), triangles.material.Ns);
+
+            let translation;
+
+            if (i === 0) {
+                translation = mult(translate(satelliteX, satelliteY, -30.0),
+                    mult(rotateY(-40),
+                        rotateX(satelliteTheta)));
+            }
+
+            let translationU = gl.getUniformLocation(program, "translation");
+            gl.uniformMatrix4fv(translationU, false, flatten(translation));
+
+            gl.drawArrays(gl.TRIANGLES, 0, vertices.length);
+        }
     }
 }
 
@@ -311,6 +388,33 @@ function pushSphere() {
     let vNormalPosition = gl.getAttribLocation(program, "vNormal");
     gl.vertexAttribPointer(vNormalPosition, 4, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(vNormalPosition);
+}
+
+function loadObject(objFile, mtlFile) {
+    let objData, mtlData;
+
+    let getOBJ = new XMLHttpRequest();
+    let getMTL = new XMLHttpRequest();
+    getOBJ.open("GET", "http://localhost:" + port + "/" + objFile, false);
+    getOBJ.send();
+    if (getOBJ.status === 200) {
+        objData = getOBJ.responseText;
+    } else {
+        throw "Unable to get " + objFile;
+    }
+
+    getMTL.open("GET", "http://localhost:" + port + "/" + mtlFile, false);
+    getMTL.send();
+    if (getMTL.status === 200) {
+        mtlData = getMTL.responseText;
+    } else {
+        throw "Unable to get " + mtlFile;
+    }
+
+    let out = new LearnWebglConsoleMessages();
+
+    let modelMaterials = createObjModelMaterials(mtlData);
+    models.push(createModelsFromOBJ(objData, modelMaterials, out));
 }
 
 function configureDefaultTexture() {

@@ -11,21 +11,20 @@ uniform mat4 projectionMatrix;
 varying vec3 L, N, V;
 uniform vec4 lightPosition;
 uniform mat4 translation;
-uniform mat4 electronTransform;
 
 void main()
 {
     //Diffuse
     //Calculate L
 
-    vec4 nm = vNormal;
-    nm.w = 1.0;     //To calculate the lighting vector, we need to convert the normal position
-    vec3 pos = (modelViewMatrix * nm).xyz;
+    vec4 nm = vPosition;
+    //nm.w = 1.0;     //To calculate the lighting vector, we need to convert the normal position
+    vec3 pos = (translation * nm).xyz;
     L = normalize(lightPosition.xyz - pos);
 
     //Calculate N
     //Here, we need to convert the normal direction (not the position)
-    N = normalize(modelViewMatrix * vNormal).xyz;
+    N = normalize(translation * vNormal).xyz;
 
     //Specular
     //V = origin - pos = -pos
@@ -70,8 +69,14 @@ void main()
 
 <script type="text/javascript" src="lib/webgl-utils.js"></script>
 <script type="text/javascript" src="lib/initShaders.js"></script>
-
 <script type="text/javascript" src="lib/MV.js"></script>
+<script type="text/javascript" src="lib/cs4731pjt1.js"></script>
+
+<script type="text/javascript" src="object_handling/learn_webgl_obj_to_arrays.js"></script>
+<script type="text/javascript" src="object_handling/learn_webgl_vector3.js"></script>
+<script type="text/javascript" src="object_handling/jquery.js"></script>
+<script type="text/javascript" src="object_handling/learn_webgl_console_messages.js"></script>
+
 <script type="text/javascript" src="main.js"></script>
 
 <body>
