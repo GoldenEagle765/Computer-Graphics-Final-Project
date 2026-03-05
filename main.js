@@ -3,17 +3,21 @@ let gl;
 let program;
 let port = 6767;
 
-let numTimesToSubdivide = 4;
+let numTimesToSubdivide = 3;
 
 let index = 0;
 
-let nucleusPositions = [vec3(0, 0, 0), vec3(0, 0, 1.5), vec3(1.5, 0, 0), vec3(-1.5, 0, 0), vec3(0, 1.5, 0), vec3(0, -1.5, 0), vec3(0, 0, -1.5)];
-let nucleusTypes = [0,0,1,1]; // 0 is neutron, 1 is proton
+let nucleusPositions = [vec3(0, 0, 0), vec3(0, 0, 1.5), vec3(1.5, 0, 0), vec3(-1.5, 0, 0), vec3(0, 1.5, 0), vec3(0, -1.5, 0), vec3(0, 0, -1.5),
+                              vec3(0, 1.06, 1.06), vec3(-0.92, -0.53, 1.06), vec3(0.92, -0.53, 1.06), vec3(1.06, -1.06, 0), vec3(1.06, 0.53, -0.92), vec3(1.06, 0.53, 0.92),
+                              vec3(-1.06, -1.06, 0), vec3(-1.06, 0.53, -0.92), vec3(-1.06, 0.53, 0.92), vec3(1.06, 1.06, 0), vec3(-0.53, 1.06, -0.92), vec3(-0.53, 1.06, 0.92),
+                              vec3(1.06, -1.06, 0), vec3(-0.53, -1.06, -0.92), vec3(-0.53, -1.06, 0.92), vec3(0, 1.06, -1.06), vec3(-0.92, -0.53, -1.06), vec3(0.92, -0.53, -1.06)];
+let numNeutrons = 10;
+let numProtons = 10;
 let rootChildren = 6;
 let branchChildren = 3;
 let nucleus;
 
-let electronPositions = [vec3(5, 0, 0), vec3(-5, 0, 0)];
+let electronPositions = [vec3(10, 0, 0), vec3(-10, 0, 0), vec3(15,0,0), vec3(-15,0,0), vec3(0,15,0), vec3(0,-15,0), vec3(10.6,10.6,0), vec3(-10.6,-10.6,0), vec3(10.6,-10.6,0), vec3(-10.6,10.6,0)];
 let electronSize = 0.5;
 
 let electronTransform;
@@ -36,11 +40,6 @@ let modelVecs = []
 //or sphere could appear black
 let near = 0.1;
 let far = 100;
-
-let left = -10;
-let right = 10;
-let ytop = 10;
-let bottom = -10;
 
 let va = vec4(0.0, 0.0, -1.0, 1);
 let vb = vec4(0.0, 0.942809, 0.333333, 1);
@@ -124,7 +123,7 @@ function divideTriangle(a, b, c, count) {
         divideTriangle(bc, c, ac, count - 1);
         divideTriangle(ab, bc, ac, count - 1);
     } else {
-        triangle(a, b, c);
+        triangle(c, b, a);
     }
 }
 
@@ -164,6 +163,7 @@ window.onload = function init() {
     program = initShaders(gl, "vertex-shader", "fragment-shader");
     gl.useProgram(program);
     gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.CULL_FACE);
    // configureDefaultTexture();
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
 
@@ -190,7 +190,7 @@ window.onload = function init() {
             let normals = [];
 
             for (let k = 0; k < triangles.vertices.length; k += 3) {
-                vertices.push(vec4(triangles.vertices[k], triangles.vertices[k + 1], triangles.vertices[k + 2], 1));
+                vertices.push(vec4(triangles.vertices[k], triangles.vertices[k + 1], triangles.vertices[k+2], 1));
                 normals.push(vec4(triangles.flat_normals[k], triangles.flat_normals[k + 1], triangles.flat_normals[k + 2], 0));
             }
 
@@ -230,26 +230,26 @@ function render() {
         beta += 0.2;
         satelliteTheta += 0.6;
         satelliteX += 0.025;
-        if (satelliteX > 50) {
-            satelliteX = -50
+        if (satelliteX > 60) {
+            satelliteX = -60
         }
         satelliteY -= 0.015;
-        if (satelliteY < -50) {
-            satelliteY = 50
+        if (satelliteY < -60) {
+            satelliteY = 60
         }
         spaceshipX -= 0.026;
-        if (spaceshipX < -60) {
-            spaceshipX = 80
+        if (spaceshipX < -70) {
+            spaceshipX = 90
         }
         spaceshipY -= 0.01;
-        if (spaceshipY < -60) {
-            spaceshipY = 70
+        if (spaceshipY < -70) {
+            spaceshipY = 80
         }
     }
 
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    eye = vec3(0, 0, 10.0);
+    eye = vec3(0, 0, 20.0);
 
     modelViewMatrix = lookAt(eye, at, up);
     projectionMatrix = perspective(90, 1, near, far);
@@ -257,7 +257,9 @@ function render() {
     gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(modelViewMatrix));
     gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
 
-    gl.uniform1f(gl.getUniformLocation(program, "isObject"), 1.0);
+    gl.disableVertexAttribArray();
+
+    gl.uniform1i(gl.getUniformLocation(program, "isSkybox"), 0);
 
     drawObjects();
 
@@ -271,12 +273,26 @@ function render() {
 
     drawElectrons();
     drawNucleus();
+    //drawSkybox();
 
     requestAnimFrame(render);
 }
 
 function buildNucleus() {
-    shuffle(nucleusTypes);
+    let nucleusTypes = [];
+    let numParticles = numNeutrons + numProtons;
+
+    for (let i = 0; i < numParticles; i++) {
+        let roll = Math.random() * (numNeutrons + numProtons);
+        if (roll > numNeutrons) {
+            nucleusTypes.push(1);
+            numProtons--;
+        } else {
+            nucleusTypes.push(0);
+            numNeutrons--;
+        }
+    }
+
     let root = new Particle(translate(nucleusPositions[0][0], nucleusPositions[0][1], nucleusPositions[0][2]), nucleusTypes[0]);
     nucleus = new Tree(root);
     let queue = []
@@ -394,17 +410,18 @@ function drawNucleus() {
     }
 }
 
-function shuffle(array) {
-    let currentIndex = array.length;
+function drawSkybox() {
+    gl.enableVertexAttribArray(vTexCoord);
+    gl.disableVertexAttribArray(vNormal);
 
-    while (currentIndex !== 0) {
+    gl.uniform1i(gl.getUniformLocation(program, "isSkybox"), 1);
 
-        let randomIndex = Math.floor(Math.random() * currentIndex);
-        currentIndex--;
+    let vBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(pointsArrayCube), gl.STATIC_DRAW);
+    gl.vertexAttribPointer(vPosition, 4, gl.FLOAT, false, 0, 0);
 
-        [array[currentIndex], array[randomIndex]] = [
-            array[randomIndex], array[currentIndex]];
-    }
+    gl.drawArrays( gl.TRIANGLES, 0, pointsArrayCube.length );
 }
 
 function pushSphere() {

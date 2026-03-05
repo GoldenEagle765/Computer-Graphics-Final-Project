@@ -11,24 +11,27 @@ uniform mat4 projectionMatrix;
 varying vec3 L, N, V;
 uniform vec4 lightPosition;
 uniform mat4 translation;
+uniform bool isSkybox;
 
 void main()
 {
-    //Diffuse
-    //Calculate L
+    if (!isSkybox) {
+        //Diffuse
+        //Calculate L
 
-    vec4 nm = vPosition;
-    //nm.w = 1.0;     //To calculate the lighting vector, we need to convert the normal position
-    vec3 pos = (translation * nm).xyz;
-    L = normalize(lightPosition.xyz - pos);
+        vec4 nm = vPosition;
+        //nm.w = 1.0;     //To calculate the lighting vector, we need to convert the normal position
+        vec3 pos = (translation * nm).xyz;
+        L = normalize(lightPosition.xyz - pos);
 
-    //Calculate N
-    //Here, we need to convert the normal direction (not the position)
-    N = normalize(translation * vNormal).xyz;
+        //Calculate N
+        //Here, we need to convert the normal direction (not the position)
+        N = normalize(translation * vNormal).xyz;
 
-    //Specular
-    //V = origin - pos = -pos
-    V = normalize(-pos);
+        //Specular
+        //V = origin - pos = -pos
+        V = normalize(-pos);
+    }
 
     gl_Position = projectionMatrix * modelViewMatrix * translation *  vPosition;
 }
@@ -42,28 +45,33 @@ uniform vec4 lightDiffuse, lightSpecular, lightAmbient;
 uniform vec4 materialDiffuse, materialSpecular, materialAmbient;
 uniform float shininess;
 varying vec3 L, N, V;
+uniform bool isSkybox;
 
 void main()
 {
-    //Diffuse
-    //Id = Ld kd dot(l • n)
-    vec4 diffuse = lightDiffuse * materialDiffuse * dot(L, N);
+    if (!isSkybox) {
+        //Diffuse
+        //Id = Ld kd dot(l • n)
+        vec4 diffuse = lightDiffuse * materialDiffuse * dot(L, N);
 
-    //Specular
-    //r = (2 (l · n ) n) - l
-    vec3 R = 2.0 * (dot(L, N) * N) - L;
+        //Specular
+        //r = (2 (l · n ) n) - l
+        vec3 R = 2.0 * (dot(L, N) * N) - L;
 
-    //Is = Ls Ks dot(V, R)^a
-    vec4 specular = lightSpecular * materialSpecular * pow(max(dot(V, R), 0.0), shininess);
+        //Is = Ls Ks dot(V, R)^a
+        vec4 specular = lightSpecular * materialSpecular * pow(max(dot(V, R), 0.0), shininess);
 
-    //Ambient
-    //Ia = Laka
-    vec4 ambient = lightAmbient * materialAmbient;
+        //Ambient
+        //Ia = Laka
+        vec4 ambient = lightAmbient * materialAmbient;
 
-    vec4 fColor = diffuse + specular + ambient;
-	fColor.a = 1.0;
-
-    gl_FragColor = fColor;
+        vec4 fColor = diffuse + specular + ambient;
+        fColor.a = 1.0;
+        gl_FragColor = fColor;
+	}
+	else {
+	    gl_FragColor = texture2D(tex1, fTexCoord);
+	}
 }
 </script>
 
