@@ -2,36 +2,43 @@
 <html>
 
 <script id="vertex-shader" type="x-shader/x-vertex">
+attribute vec4 vPosition;
+attribute vec4 vNormal;
 
-// assume both position and normal are in homogeneous form
-
-attribute vec4 vPosition, vNormal;
 uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
-varying vec3 L, N, V;
-uniform vec4 lightPosition;
 uniform mat4 translation;
-uniform mat4 electronTransform;
+uniform vec4 lightPosition;
+
+varying vec3 L, N, V;
+
+attribute vec2 vTexCoord;
+varying vec2 fTexCoord;
 
 void main()
 {
-    //Diffuse
-    //Calculate L
+    // Combine per-object transform with the camera transform
+    mat4 mv = modelViewMatrix * translation;
 
-    vec4 nm = vNormal;
-    nm.w = 1.0;     //To calculate the lighting vector, we need to convert the normal position
-    vec3 pos = (modelViewMatrix * nm).xyz;
-    L = normalize(lightPosition.xyz - pos);
+    // Vertex position in eye space
+    vec3 posEye = (mv * vPosition).xyz;
 
-    //Calculate N
-    //Here, we need to convert the normal direction (not the position)
-    N = normalize(modelViewMatrix * vNormal).xyz;
+    // Normal in eye space
+    // (works correctly for rotation + uniform scale; if you add non-uniform scale later,
+    // switch to inverse-transpose normal matrix)
+    vec3 nEye = normalize((mv * vec4(vNormal.xyz, 0.0)).xyz);
 
-    //Specular
-    //V = origin - pos = -pos
-    V = normalize(-pos);
+    // Light vector in eye space
+    vec3 lEye = normalize(lightPosition.xyz - posEye);
 
-    gl_Position = projectionMatrix * modelViewMatrix * translation *  vPosition;
+    // View vector in eye space (camera at origin in eye space)
+    vec3 vEye = normalize(-posEye);
+
+    L = lEye;
+    N = nEye;
+    V = vEye;
+    fTexCoord = vTexCoord;
+    gl_Position = projectionMatrix * vec4(posEye, 1.0);
 }
 </script>
 
@@ -43,6 +50,10 @@ uniform vec4 lightDiffuse, lightSpecular, lightAmbient;
 uniform vec4 materialDiffuse, materialSpecular, materialAmbient;
 uniform float shininess;
 varying vec3 L, N, V;
+varying vec4 fColor;
+varying vec2 fTexCoord;
+
+uniform sampler2D tex0;
 
 void main()
 {
