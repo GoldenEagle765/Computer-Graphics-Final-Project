@@ -52,9 +52,22 @@ let materialShininess = 20.0;
 let modelViewMatrix, projectionMatrix;
 let modelViewMatrixLoc, projectionMatrixLoc;
 
+var texCoordsArray = [];
+var texture;
+
 let eye;
 let at = vec3(0.0, 0.0, 0.0);
 let up = vec3(0.0, 1.0, 0.0);
+
+var minT = 0.0;
+var maxT = 1.0;
+
+var texCoord = [
+    vec2(minT, minT),
+    vec2(minT, maxT),
+    vec2(maxT, maxT),
+    vec2(maxT, minT)
+];
 
 function Tree(root) {
     this.root = root;
@@ -70,8 +83,11 @@ function triangle(a, b, c) {
 
 
     pointsArray.push(a);
+   
     pointsArray.push(b);
+    
     pointsArray.push(c);
+    
 
     // normals are vectors but where w = 0.0,
     // since normals do not have a homogeneous coordinate
@@ -141,12 +157,13 @@ window.onload = function init() {
     program = initShaders(gl, "vertex-shader", "fragment-shader");
     gl.useProgram(program);
     gl.enable(gl.DEPTH_TEST);
+   // configureDefaultTexture();
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
 
     //
     //  Load shaders and initialize attribute buffers
     //
-
+    
     window.addEventListener("keydown", handleKey);
 
     tetrahedron(va, vb, vc, vd, numTimesToSubdivide);
@@ -168,6 +185,10 @@ window.onload = function init() {
 
     gl.uniform4fv(gl.getUniformLocation(program, "lightPosition"), flatten(lightPosition));
     gl.uniform1f(gl.getUniformLocation(program, "shininess"), materialShininess);
+
+    //var vTexCoord = gl.getAttribLocation( program, "vTexCoord" );
+    //gl.vertexAttribPointer( vTexCoord, 2, gl.FLOAT, false, 0, 0 );
+    //gl.enableVertexAttribArray( vTexCoord );
 
     render();
 }
@@ -205,7 +226,7 @@ function buildNucleus() {
     let queue = []
 
     for (let i = 0; i < rootChildren; i++) queue.push(root);
-
+    
     for (let i = 1; i < nucleusTypes.length; i++) {
         let type = nucleusTypes[i];
         let parent = queue.shift();
@@ -290,4 +311,47 @@ function pushSphere() {
     let vNormalPosition = gl.getAttribLocation(program, "vNormal");
     gl.vertexAttribPointer(vNormalPosition, 4, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(vNormalPosition);
+}
+
+function configureDefaultTexture() {
+
+    let tex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        2,
+        2,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        new Uint8Array([255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0, 0, 255, 0, 255])
+    );
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+}
+
+
+function configureTexture(image) {
+
+    let tex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image);
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    gl.uniform1i(gl.getUniformLocation(program, "tex0"), 0);
 }
