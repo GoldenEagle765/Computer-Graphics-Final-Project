@@ -1,3 +1,7 @@
+Object files
+Satellite: https://free3d.com/3d-model/small-satellite-308237.html
+Spaceship: https://free3d.com/3d-model/lp-spaceship-29326.html
+
 Program requirements
 
 Requires Node.js for more complex objects

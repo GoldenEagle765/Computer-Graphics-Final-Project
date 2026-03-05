@@ -24,10 +24,13 @@ let beta = 0;
 let satelliteTheta = 0;
 let satelliteX = -10;
 let satelliteY = -10;
+let spaceshipX = 30;
+let spaceshipY = 0;
 
 let pointsArray = [];
 let normalsArray = [];
 let models = [];
+let modelVecs = []
 
 //Make sure these are set properly, 
 //or sphere could appear black
@@ -171,8 +174,29 @@ window.onload = function init() {
     window.addEventListener("keydown", handleKey);
 
     // Load objects
-    loadObject("./objects/Satellite/Satellite.obj", "./objects/Satellite/Satellite.mtl");
-    console.log(models[0]);
+    loadObject("objects/Satellite/Satellite.obj", "objects/Satellite/Satellite.mtl");
+    loadObject("objects/Spaceship/SpaceShipDetailed.obj", "objects/Spaceship/SpaceShipDetailed.mtl");
+    console.log(models);
+
+    for (let i = 0; i < models.length; i++) {
+        let object = models[i];
+        let numModels = object['number_models'];
+
+        for (let j = 0; j < numModels; j++) {
+            let model = object[j];
+            let triangles = model.triangles;
+
+            let vertices = [];
+            let normals = [];
+
+            for (let k = 0; k < triangles.vertices.length; k += 3) {
+                vertices.push(vec4(triangles.vertices[k], triangles.vertices[k + 1], triangles.vertices[k + 2], 1));
+                normals.push(vec4(triangles.flat_normals[k], triangles.flat_normals[k + 1], triangles.flat_normals[k + 2], 0));
+            }
+
+            modelVecs.push([vertices, normals]);
+        }
+    }
 
     tetrahedron(va, vb, vc, vd, numTimesToSubdivide);
 
@@ -205,13 +229,21 @@ function render() {
         alpha += 0.3;
         beta += 0.2;
         satelliteTheta += 0.6;
-        satelliteX += 0.05;
+        satelliteX += 0.025;
         if (satelliteX > 50) {
             satelliteX = -50
         }
-        satelliteY -= 0.03;
+        satelliteY -= 0.015;
         if (satelliteY < -50) {
             satelliteY = 50
+        }
+        spaceshipX -= 0.026;
+        if (spaceshipX < -60) {
+            spaceshipX = 80
+        }
+        spaceshipY -= 0.01;
+        if (spaceshipY < -60) {
+            spaceshipY = 70
         }
     }
 
@@ -225,6 +257,8 @@ function render() {
     gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(modelViewMatrix));
     gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
 
+    gl.uniform1f(gl.getUniformLocation(program, "isObject"), 1.0);
+
     drawObjects();
 
     //Pass in parameters for lighting equations
@@ -232,6 +266,8 @@ function render() {
     gl.uniform4fv(gl.getUniformLocation(program, "materialSpecular"), flatten(materialSpecular));
     gl.uniform4fv(gl.getUniformLocation(program, "materialAmbient"), flatten(materialAmbient));
     gl.uniform1f(gl.getUniformLocation(program, "shininess"), materialShininess);
+
+    gl.uniform1f(gl.getUniformLocation(program, "isObject"), 0.0);
 
     drawElectrons();
     drawNucleus();
@@ -260,21 +296,15 @@ function buildNucleus() {
 }
 
 function drawObjects() {
+    let modelCount = 0;
     for (let i = 0; i < models.length; i++) {
         let object = models[i];
         let numModels = object['number_models'];
 
         for (let j = 0; j < numModels; j++) {
-            let model = object[j];
-            let triangles = model.triangles;
-
-            let vertices = [];
-            let normals = [];
-
-            for (let k = 0; k < triangles.vertices.length; k+=3) {
-                vertices.push(vec4(triangles.vertices[k], triangles.vertices[k+1], triangles.vertices[k+2], 1));
-                normals.push(vec4(triangles.flat_normals[k], triangles.flat_normals[k+1], triangles.flat_normals[k+2], 0));
-            }
+            let triangles = object[j].triangles;
+            let vertices = modelVecs[modelCount][0]
+            let normals = modelVecs[modelCount][1]
 
             let vBuffer = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
@@ -300,18 +330,24 @@ function drawObjects() {
             gl.uniform4fv(gl.getUniformLocation(program, "materialAmbient"), flatten(triangles.material.Ka));
             gl.uniform1f(gl.getUniformLocation(program, "shininess"), triangles.material.Ns);
 
-            let translation;
+            let translation = translate(0,0,0);
 
             if (i === 0) {
                 translation = mult(translate(satelliteX, satelliteY, -30.0),
                     mult(rotateY(-40),
                         rotateX(satelliteTheta)));
+            } else if (i === 1) {
+                translation = mult(translate(spaceshipX, spaceshipY, -40.0),
+                    mult(rotateZ(20),
+                        scalem(0.1, 0.1, 0.1)));
             }
 
             let translationU = gl.getUniformLocation(program, "translation");
             gl.uniformMatrix4fv(translationU, false, flatten(translation));
 
             gl.drawArrays(gl.TRIANGLES, 0, vertices.length);
+
+            modelCount++;
         }
     }
 }
