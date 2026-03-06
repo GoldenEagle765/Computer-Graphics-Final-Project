@@ -2,15 +2,39 @@
 <html>
 
 <script id="vertex-shader" type="x-shader/x-vertex">
+attribute vec4 vPosition;
+attribute vec4 vNormal;
 
-// assume both position and normal are in homogeneous form
-
-attribute vec4 vPosition, vNormal;
 uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
-varying vec3 L, N, V;
-uniform vec4 lightPosition;
 uniform mat4 translation;
+
+uniform bool uShadowPass;
+uniform mat4 uLightViewProj;
+
+uniform mat4 textureMatrix;
+
+varying vec3 vPosEye;
+varying vec3 vNormalEye;
+
+varying vec4 v_projectedTexcoord;
+
+varying vec3 vWorldPos;
+
+void main()
+{
+    vec4 worldPosition = translation * vPosition;
+    vWorldPos = worldPosition.xyz;
+
+    if (uShadowPass) {
+        gl_Position = uLightViewProj * worldPosition;
+        return;
+    }
+
+    mat4 mv = modelViewMatrix * translation;
+
+    vec3 posEye = (mv * vPosition).xyz;
+    vec3 nEye   = normalize((mv * vec4(vNormal.xyz, 0.0)).xyz);
 uniform bool isSkybox;
 
 void main()
@@ -33,14 +57,102 @@ void main()
         V = normalize(-pos);
     }
 
-    gl_Position = projectionMatrix * modelViewMatrix * translation *  vPosition;
+    vPosEye = posEye;
+    vNormalEye = nEye;
+    v_projectedTexcoord = textureMatrix * worldPosition;
+
+    gl_Position = projectionMatrix * vec4(posEye, 1.0);
 }
 </script>
 
 <script id="fragment-shader" type="x-shader/x-fragment">
-
 precision mediump float;
 
+uniform bool uShadowPass;
+
+uniform vec4 baseColor;
+
+uniform sampler2D shadowMap;
+
+uniform bool uShadowsEnabled;    
+uniform bool uLightingEnabled;   
+
+varying vec3 vPosEye;
+varying vec3 vNormalEye;
+varying vec4 v_projectedTexcoord;
+
+uniform vec3 uPointLightPosWorld;
+varying vec3 vWorldPos;
+
+uniform vec3 uSpotPosWorld;
+uniform vec3 uSpotDirWorld;     
+uniform float uSpotCosCutoff;    
+uniform float uSpotExponent;     
+uniform vec4 uSpotColor;
+uniform vec3 uSpotPosEye;     
+uniform vec3 uSpotDirEye;
+
+float shadowFactor() {
+    if (!uShadowsEnabled) return 1.0;
+    vec3 proj = v_projectedTexcoord.xyz / v_projectedTexcoord.w;
+    if (proj.x < 0.0 || proj.x > 1.0 || proj.y < 0.0 || proj.y > 1.0) return 1.0;
+    float closestDepth = texture2D(shadowMap, proj.xy).r;
+    float bias = 0.0015;
+    float currentDepth = proj.z - bias;
+    return (currentDepth > closestDepth) ? 0.5 : 1.0;
+}
+
+void main()
+{
+  
+
+    if (uShadowPass) {
+        gl_FragColor = vec4(0.0,0.0,0.0,1.0);
+        return;
+    }
+
+    vec3 ambient = vec3(0.18);
+    if (!uLightingEnabled) {
+        vec4 outColor = vec4(ambient, 1.0) * baseColor;
+        outColor.a = baseColor.a;
+        gl_FragColor = outColor;
+        return;
+    }
+
+    vec3 N = normalize(vNormalEye);
+    vec3 V = normalize(-vPosEye);
+    //vec3 L = normalize(vec3(0.2, 0.8, 0.6));
+    vec3 L = normalize(uPointLightPosWorld - vWorldPos);
+
+    float ndotl = max(dot(N, L), 0.0);
+    vec3 R = reflect(-L, N);
+    float spec = pow(max(dot(V, R), 0.0), 20.0);
+
+    vec3 diffuse = vec3(ndotl);
+    vec3 specular = 0.35 * vec3(spec);
+
+    float s=shadowFactor();
+
+    vec3 lighting = ambient + s* (diffuse + specular);
+    vec3 Lspot = normalize(uSpotPosEye - vPosEye);          
+    float ndotl_spot = max(dot(N, Lspot), 0.0);
+
+    vec3 Rspot = reflect(-Lspot, N);
+    float spec_spot = pow(max(dot(V, Rspot), 0.0), 20.0);
+    vec3 lightToFrag = normalize((vWorldPos - uSpotPosWorld));
+    float cosAngle = dot(normalize(uSpotDirWorld), lightToFrag);
+    float spotAtten = 0.0;
+    if (cosAngle > uSpotCosCutoff) {
+        spotAtten = pow(cosAngle, uSpotExponent);
+    }
+    vec3 spotDiffuse = spotAtten * uSpotColor.rgb * ndotl_spot;
+    vec3 spotSpec    = spotAtten * uSpotColor.rgb * (0.35 * spec_spot);
+
+    lighting += (spotDiffuse + spotSpec);
+    vec4 outColor = vec4(lighting, 1.0) * baseColor;
+    outColor.a = baseColor.a;
+
+    gl_FragColor = outColor;
 uniform vec4 lightDiffuse, lightSpecular, lightAmbient;
 uniform vec4 materialDiffuse, materialSpecular, materialAmbient;
 uniform float shininess;
@@ -88,8 +200,6 @@ void main()
 <script type="text/javascript" src="main.js"></script>
 
 <body>
-<canvas id="gl-canvas" width="512" height="512">
-Epic fail!
-</canvas>
+<canvas id="gl-canvas" width="512" height="512">Epic fail!</canvas>
 </body>
 </html>

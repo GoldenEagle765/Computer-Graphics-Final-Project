@@ -7,6 +7,11 @@ let numTimesToSubdivide = 3;
 
 let index = 0;
 
+//let nucleusPositions = [
+//  vec3(0, 0, 0), vec3(0, 0, 1.5), vec3(1.5, 0, 0), vec3(-1.5, 0, 0),
+ // vec3(0, 1.5, 0), vec3(0, -1.5, 0), vec3(0, 0, -1.5)
+//];
+let nucleusTypes = [0, 0, 1, 1]; // 0 is neutron, 1 is proton
 let nucleusPositions = [vec3(0, 0, 0), vec3(0, 0, 1.5), vec3(1.5, 0, 0), vec3(-1.5, 0, 0), vec3(0, 1.5, 0), vec3(0, -1.5, 0), vec3(0, 0, -1.5),
                               vec3(0, 1.06, 1.06), vec3(-0.92, -0.53, 1.06), vec3(0.92, -0.53, 1.06), vec3(1.06, -1.06, 0), vec3(1.06, 0.53, -0.92), vec3(1.06, 0.53, 0.92),
                               vec3(-1.06, -1.06, 0), vec3(-1.06, 0.53, -0.92), vec3(-1.06, 0.53, 0.92), vec3(1.06, 1.06, 0), vec3(-0.53, 1.06, -0.92), vec3(-0.53, 1.06, 0.92),
@@ -36,8 +41,8 @@ let normalsArray = [];
 let models = [];
 let modelVecs = []
 
-//Make sure these are set properly, 
-//or sphere could appear black
+// Make sure these are set properly,
+// or sphere could appear black
 let near = 0.1;
 let far = 100;
 
@@ -46,6 +51,7 @@ let vb = vec4(0.0, 0.942809, 0.333333, 1);
 let vc = vec4(-0.816497, -0.471405, 0.333333, 1);
 let vd = vec4(0.816497, -0.471405, 0.333333, 1);
 
+let lightPosition = vec4(1.0, 0.0, -1.0, 1.0);  
 let lightPosition = vec4(0.0, 0.0, 5.0, 1.0);  //eye coordinates
 let lightAmbient = vec4(0.2, 0.2, 0.2, 1.0);
 let lightDiffuse = vec4(1.0, 1.0, 1.0, 1.0);
@@ -66,6 +72,9 @@ let eye;
 let at = vec3(0.0, 0.0, 0.0);
 let up = vec3(0.0, 1.0, 0.0);
 
+let shadowsEnabled = true;  
+let lightingEnabled = true;  
+let topDownView = false;     
 var minT = 0.0;
 var maxT = 1.0;
 
@@ -80,14 +89,14 @@ function Tree(root) {
     this.root = root;
 }
 
-function Particle(matrix, type) {
-    this.children = [];
-    this.matrix = matrix;
-    this.type = type;
-}
+const SHADOW_SIZE = 512;
 
-function triangle(a, b, c) {
+let shadowFB = null;
+let shadowColorTex = null;     
+let shadowDepthTex = [];       
 
+let uPointLightPosWorldLoc;
+let uSpotPosEyeLoc, uSpotDirEyeLoc;
 
     pointsArray.push(a);
    
@@ -96,17 +105,54 @@ function triangle(a, b, c) {
     pointsArray.push(c);
     
 
-    // normals are vectors but where w = 0.0,
-    // since normals do not have a homogeneous coordinate
-    normalsArray.push(a[0], a[1], a[2], 0.0);
-    normalsArray.push(b[0], b[1], b[2], 0.0);
-    normalsArray.push(c[0], c[1], c[2], 0.0);
 
-    index += 3;
+let lightViewProj = [];        
 
-}
+let textureMatrixFace = [];     
+
+let pointLightPosWorld = vec3(0.0, 2.0, 0.0);
+let shadowNear = 0.1;
+let shadowFar = 20.0;
+
+const FACE_DIRS = [
+  { dir: vec3( 1, 0, 0), up: vec3(0,-1, 0) }, 
+  { dir: vec3(-1, 0, 0), up: vec3(0,-1, 0) }, 
+  { dir: vec3( 0, 1, 0), up: vec3(0, 0, 1) }, 
+  { dir: vec3( 0,-1, 0), up: vec3(0, 0,-1) }, 
+  { dir: vec3( 0, 0, 1), up: vec3(0,-1, 0) }, 
+  { dir: vec3( 0, 0,-1), up: vec3(0,-1, 0) }, 
+];
 
 
+let translationLoc;
+let baseColorLoc;
+
+let uShadowPassLoc;
+let uLightViewProjLoc;
+
+let textureMatrixLoc;
+let shadowMapLoc;
+
+let uShadowsEnabledLoc;
+let uLightingEnabledLoc;
+
+
+let isShadowPass = false;
+
+function Tree(root) { this.root = root; }
+function Particle(matrix, type) { this.children = []; this.matrix = matrix; this.type = type; }
+
+
+function triangle(a, b, c) {
+  pointsArray.push(a);
+  pointsArray.push(b);
+  pointsArray.push(c);
+
+  normalsArray.push(a[0], a[1], a[2], 0.0);
+  normalsArray.push(b[0], b[1], b[2], 0.0);
+  normalsArray.push(c[0], c[1], c[2], 0.0);
+
+  index += 3;
 function divideTriangle(a, b, c, count) {
     if (count > 0) {
 
@@ -127,38 +173,157 @@ function divideTriangle(a, b, c, count) {
     }
 }
 
+function divideTriangle(a, b, c, count) {
+  if (count > 0) {
+    let ab = mix(a, b, 0.5);
+    let ac = mix(a, c, 0.5);
+    let bc = mix(b, c, 0.5);
+
+    ab = normalize(ab, true);
+    ac = normalize(ac, true);
+    bc = normalize(bc, true);
+
+    divideTriangle(a, ab, ac, count - 1);
+    divideTriangle(ab, b, bc, count - 1);
+    divideTriangle(bc, c, ac, count - 1);
+    divideTriangle(ab, bc, ac, count - 1);
+  } else {
+    triangle(a, b, c);
+  }
+}
 
 function tetrahedron(a, b, c, d, n) {
-    divideTriangle(a, b, c, n);
-    divideTriangle(d, c, b, n);
-    divideTriangle(a, d, b, n);
-    divideTriangle(a, c, d, n);
+  divideTriangle(a, b, c, n);
+  divideTriangle(d, c, b, n);
+  divideTriangle(a, d, b, n);
+  divideTriangle(a, c, d, n);
 }
 
 function handleKey(evt) {
+  if (evt.repeat) return;
+
+  let key = evt.key.toLowerCase();
+
+  if (key === "a") {
+    isAnimating = !isAnimating;
+  } else if (key === "s") {
+    shadowsEnabled = !shadowsEnabled;
+  } else if (key === "l") {
+    lightingEnabled = !lightingEnabled;
+  } else if (key === "t") {
+    topDownView = !topDownView;
+  } else {
+    return;
+  }
+
+  evt.preventDefault();
+}
     let key = evt.key.toLowerCase();
 
-    if (key == "a") {
-        isAnimating = !isAnimating;
-    } else if (key == "s") {
+function makeColorAttachment(size) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  return t;
+}
 
-    } else if (key == "l") {
+function makeDepthTexture(size) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
-    } else if (key == "t") {
+  gl.texImage2D(
+    gl.TEXTURE_2D, 0,
+    gl.DEPTH_COMPONENT,
+    size, size, 0,
+    gl.DEPTH_COMPONENT,
+    gl.UNSIGNED_INT,
+    null
+  );
 
-    }
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  return tex;
+}
 
+function updatePointLightShadowMatrices() {
+  const proj = perspective(90, 1.0, shadowNear, shadowFar);
+
+  for (let i = 0; i < 6; i++) {
+    const target = add(pointLightPosWorld, FACE_DIRS[i].dir);
+    const view = lookAt(pointLightPosWorld, target, FACE_DIRS[i].up);
+
+    lightViewProj[i] = mult(proj, view);
+
+    let tm = mult(proj, view);
+    tm = mult(scalem(0.5, 0.5, 0.5), tm);
+    tm = mult(translate(0.5, 0.5, 0.5), tm);
+    textureMatrixFace[i] = tm;
+  }
+}
+
+function pickShadowFace(v) {
+  const ax = Math.abs(v[0]), ay = Math.abs(v[1]), az = Math.abs(v[2]);
+  if (ax >= ay && ax >= az) return (v[0] >= 0) ? 0 : 1; 
+  if (ay >= ax && ay >= az) return (v[1] >= 0) ? 2 : 3; 
+  return (v[2] >= 0) ? 4 : 5;                            
+}
+
+function worldCenterFromModelMatrix(m) {
+  return vec3(m[0][3], m[1][3], m[2][3]);
+}
+
+function bindShadowForObject(modelMatrix) {
+  if (isShadowPass) return;
+  if (!(shadowsEnabled && lightingEnabled)) return;
+ 
+
+  const center = worldCenterFromModelMatrix(modelMatrix);
+  const toCenter = subtract(center, pointLightPosWorld);
+  const face = pickShadowFace(toCenter);
+
+  gl.uniformMatrix4fv(textureMatrixLoc, false, flatten(textureMatrixFace[face]));
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, shadowDepthTex[face]);
 }
 
 window.onload = function init() {
+  canvas = document.getElementById("gl-canvas");
 
-    canvas = document.getElementById("gl-canvas");
+  gl = WebGLUtils.setupWebGL(canvas);
+  if (!gl) {
+    alert("WebGL isn't available");
+    return;
+  }
 
-    gl = WebGLUtils.setupWebGL(canvas);
-    if (!gl) {
-        alert("WebGL isn't available");
-    }
+  const ext = gl.getExtension("WEBGL_depth_texture");
+  if (!ext) {
+    alert("WEBGL_depth_texture not supported on this browser/GPU");
+    return;
+  }
 
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  program = initShaders(gl, "vertex-shader", "fragment-shader");
+  gl.useProgram(program);
+uPointLightPosWorldLoc = gl.getUniformLocation(program, "uPointLightPosWorld");
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.CULL_FACE);
+  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+
+  window.addEventListener("keydown", handleKey);
+
+  tetrahedron(va, vb, vc, vd, numTimesToSubdivide);
+
+  buildNucleus();
+  modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
+  projectionMatrixLoc = gl.getUniformLocation(program, "projectionMatrix");
     gl.viewport(0, 0, canvas.width, canvas.height);
     program = initShaders(gl, "vertex-shader", "fragment-shader");
     gl.useProgram(program);
@@ -200,13 +365,17 @@ window.onload = function init() {
 
     tetrahedron(va, vb, vc, vd, numTimesToSubdivide);
 
-    // Build nucleus hierarchy
-    buildNucleus();
+  translationLoc = gl.getUniformLocation(program, "translation");
+  baseColorLoc = gl.getUniformLocation(program, "baseColor");
 
-    //Pass in transformation matrices
-    modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
-    projectionMatrixLoc = gl.getUniformLocation(program, "projectionMatrix");
+  uShadowPassLoc = gl.getUniformLocation(program, "uShadowPass");
+  uLightViewProjLoc = gl.getUniformLocation(program, "uLightViewProj");
 
+  textureMatrixLoc = gl.getUniformLocation(program, "textureMatrix");
+  shadowMapLoc = gl.getUniformLocation(program, "shadowMap");
+
+  uShadowsEnabledLoc = gl.getUniformLocation(program, "uShadowsEnabled");
+  uLightingEnabledLoc = gl.getUniformLocation(program, "uLightingEnabled");
     //Pass in parameters for lighting equations
     gl.uniform4fv(gl.getUniformLocation(program, "lightDiffuse"), flatten(lightDiffuse));
     gl.uniform4fv(gl.getUniformLocation(program, "lightSpecular"), flatten(lightSpecular));
@@ -218,12 +387,44 @@ window.onload = function init() {
     //gl.vertexAttribPointer( vTexCoord, 2, gl.FLOAT, false, 0, 0 );
     //gl.enableVertexAttribArray( vTexCoord );
 
-    render();
-}
+    uSpotPosEyeLoc = gl.getUniformLocation(program, "uSpotPosEye");
+    uSpotDirEyeLoc = gl.getUniformLocation(program, "uSpotDirEye");
 
+  gl.uniform4fv(gl.getUniformLocation(program, "lightDiffuse"), flatten(lightDiffuse));
+  gl.uniform4fv(gl.getUniformLocation(program, "materialDiffuse"), flatten(materialDiffuse));
+  gl.uniform4fv(gl.getUniformLocation(program, "lightSpecular"), flatten(lightSpecular));
+  gl.uniform4fv(gl.getUniformLocation(program, "materialSpecular"), flatten(materialSpecular));
+  gl.uniform4fv(gl.getUniformLocation(program, "lightAmbient"), flatten(lightAmbient));
+  gl.uniform4fv(gl.getUniformLocation(program, "materialAmbient"), flatten(materialAmbient));
+  gl.uniform4fv(gl.getUniformLocation(program, "lightPosition"), flatten(lightPosition));
+  gl.uniform1f(gl.getUniformLocation(program, "shininess"), materialShininess);
+
+ gl.uniform1i(shadowMapLoc, 0);
+
+  shadowFB = gl.createFramebuffer();
+  shadowColorTex = makeColorAttachment(SHADOW_SIZE);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFB);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, shadowColorTex, 0);
+
+  for (let i = 0; i < 6; i++) shadowDepthTex[i] = makeDepthTexture(SHADOW_SIZE);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+  updatePointLightShadowMatrices();
+
+  render();
+};
 
 function render() {
+  if (isAnimating) {
+    theta += 0.5;
+    alpha += 0.3;
+    beta += 0.2;
+  }
 
+  if (shadowsEnabled && lightingEnabled) {
+    isShadowPass = true;
     if (isAnimating) {
         theta += 0.5;
         alpha += 0.3;
@@ -247,16 +448,25 @@ function render() {
         }
     }
 
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFB);
+    gl.viewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
+    gl.activeTexture(gl.TEXTURE0);         
+    gl.bindTexture(gl.TEXTURE_2D, null);
 
+    gl.uniform1i(uShadowPassLoc, 1);
     eye = vec3(0, 0, 20.0);
 
-    modelViewMatrix = lookAt(eye, at, up);
-    projectionMatrix = perspective(90, 1, near, far);
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mat4()));
+    gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(mat4()));
 
-    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(modelViewMatrix));
-    gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
+    gl.disable(gl.BLEND);
+    gl.depthMask(true);
 
+    for (let face = 0; face < 6; face++) {
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, shadowDepthTex[face], 0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      gl.uniformMatrix4fv(uLightViewProjLoc, false, flatten(lightViewProj[face]));
     gl.disableVertexAttribArray();
 
     gl.uniform1i(gl.getUniformLocation(program, "isSkybox"), 0);
@@ -275,10 +485,74 @@ function render() {
     drawNucleus();
     //drawSkybox();
 
-    requestAnimFrame(render);
+      drawElectrons();
+      drawNucleus();
+    }
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+ if (topDownView) {
+    eye = vec3(0, 10, 0);
+    at = vec3(0, 0, 0);
+    up = vec3(0, 0, -1);
+  } else {
+    eye = vec3(0, 0, 10.0);
+    at = vec3(0, 0, 0);
+    up = vec3(0, 1, 0);
+  }
+  isShadowPass = false;
+
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  gl.uniform1i(uShadowPassLoc, 0);
+modelViewMatrix = lookAt(eye, at, up);
+  projectionMatrix = perspective(90, 1, near, far);
+  gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(modelViewMatrix));
+  gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
+
+  if (uShadowsEnabledLoc) gl.uniform1i(uShadowsEnabledLoc, (shadowsEnabled && lightingEnabled) ? 1 : 0);
+  if (uPointLightPosWorldLoc) gl.uniform3fv(uPointLightPosWorldLoc, flatten(pointLightPosWorld));
+  if (uLightingEnabledLoc) gl.uniform1i(uLightingEnabledLoc, lightingEnabled ? 1 : 0);
+  
+  let spotPosWorld = eye;
+   let spotDirWorld=normalize(subtract(at,eye));
+    let spotPosEye4 = mult(modelViewMatrix, vec4(spotPosWorld[0], spotPosWorld[1], spotPosWorld[2], 1.0));
+    let spotPosEye = vec3(spotPosEye4[0], spotPosEye4[1], spotPosEye4[2]);
+    let spotDirEye4 = mult(modelViewMatrix, vec4(spotDirWorld[0], spotDirWorld[1], spotDirWorld[2], 0.0));
+    let spotDirEye = normalize(vec3(spotDirEye4[0], spotDirEye4[1], spotDirEye4[2]));
+
+    if (uSpotPosEyeLoc) gl.uniform3fv(uSpotPosEyeLoc, flatten(spotPosEye));
+    if (uSpotDirEyeLoc) gl.uniform3fv(uSpotDirEyeLoc, flatten(spotDirEye));
+  
+   
+
+  
+
+  
+  drawNucleus();
+
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  drawElectrons();
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+
+  requestAnimFrame(render);
 }
 
 function buildNucleus() {
+  shuffle(nucleusTypes);
+
+  let root = new Particle(
+    translate(nucleusPositions[0][0], nucleusPositions[0][1], nucleusPositions[0][2]),
+    nucleusTypes[0]
+  );
+  nucleus = new Tree(root);
+
+  let queue = [];
+  for (let i = 0; i < rootChildren; i++) queue.push(root);
     let nucleusTypes = [];
     let numParticles = numNeutrons + numProtons;
 
@@ -304,11 +578,16 @@ function buildNucleus() {
         let parent = queue.shift();
         let matrix = translate(nucleusPositions[i][0], nucleusPositions[i][1], nucleusPositions[i][2]);
 
-        let p = new Particle(matrix, type);
-        parent.children.push(p);
+  for (let i = 1; i < nucleusTypes.length; i++) {
+    let type = nucleusTypes[i];
+    let parent = queue.shift();
+    let matrix = translate(nucleusPositions[i][0], nucleusPositions[i][1], nucleusPositions[i][2]);
 
-        for (let j = 0; j < branchChildren; j++) queue.push(p);
-    }
+    let p = new Particle(matrix, type);
+    parent.children.push(p);
+
+    for (let j = 0; j < branchChildren; j++) queue.push(p);
+  }
 }
 
 function drawObjects() {
@@ -369,47 +648,81 @@ function drawObjects() {
 }
 
 function drawElectrons() {
-    for (let j = 0; j < electronPositions.length; j++) {
-        pushSphere();
+  for (let j = 0; j < electronPositions.length; j++) {
+    pushSphere();
 
-        let translation = translate(electronPositions[j][0], electronPositions[j][1], electronPositions[j][2]);
-        translation = mult(rotateZ(theta),
-            mult(translation,
-                scalem(electronSize, electronSize, electronSize)));
+    let translation = translate(electronPositions[j][0], electronPositions[j][1], electronPositions[j][2]);
+    translation = mult(
+      rotateZ(theta),
+      mult(translation, scalem(electronSize, electronSize, electronSize))
+    );
 
-        let translationU = gl.getUniformLocation(program, "translation");
-        gl.uniformMatrix4fv(translationU, false, flatten(translation));
+    gl.uniformMatrix4fv(translationLoc, false, flatten(translation));
+    if (isShadowPass) gl.uniform4fv(baseColorLoc, flatten(vec4(0, 0, 1, 1)));
+    else gl.uniform4fv(baseColorLoc, flatten(vec4(0, 0, 1, 0.35)));
 
-        gl.drawArrays(gl.TRIANGLES, 0, pointsArray.length);
+    bindShadowForObject(translation);
 
-    }
+    gl.drawArrays(gl.TRIANGLES, 0, pointsArray.length);
+  }
 }
 
 function drawNucleus() {
-    let rotationMatrix = mult(rotateX(alpha), rotateY(beta))
-    let queueMatrix = [translate(0,0,0)];
-    let queueParticle = [nucleus.root];
+  let rotationMatrix = mult(rotateX(alpha), rotateY(beta));
+  let queueMatrix = [translate(0, 0, 0)];
+  let queueParticle = [nucleus.root];
 
-    while (queueParticle.length > 0) {
-        let particle = queueParticle.shift();
-        let prevMatrix = queueMatrix.shift();
+  while (queueParticle.length > 0) {
+    let particle = queueParticle.shift();
+    let prevMatrix = queueMatrix.shift();
 
-        pushSphere();
+    pushSphere();
 
-        matrix = mult(rotationMatrix,
-            mult(prevMatrix, particle.matrix));
+    let matrix = mult(rotationMatrix, mult(prevMatrix, particle.matrix));
 
-        let translationU = gl.getUniformLocation(program, "translation");
-        gl.uniformMatrix4fv(translationU, false, flatten(matrix));
-        gl.drawArrays(gl.TRIANGLES, 0, pointsArray.length);
+    gl.uniformMatrix4fv(translationLoc, false, flatten(matrix));
 
-        for (let i = 0; i < particle.children.length; i++) {
-            queueMatrix.push(particle.matrix);
-            queueParticle.push(particle.children[i])
-        }
+    if (particle.type === 1) gl.uniform4fv(baseColorLoc, flatten(vec4(1, 0, 0, 1)));
+    else gl.uniform4fv(baseColorLoc, flatten(vec4(1, 1, 1, 1)));
+
+    bindShadowForObject(matrix);
+
+    gl.drawArrays(gl.TRIANGLES, 0, pointsArray.length);
+
+    for (let i = 0; i < particle.children.length; i++) {
+      queueMatrix.push(mult(prevMatrix, particle.matrix));
+      queueParticle.push(particle.children[i]);
     }
+  }
 }
 
+function shuffle(array) {
+  let currentIndex = array.length;
+
+  while (currentIndex !== 0) {
+    let randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+
+    [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+  }
+}
+
+function pushSphere() {
+  let vBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, flatten(pointsArray), gl.STATIC_DRAW);
+
+  let vPosition = gl.getAttribLocation(program, "vPosition");
+  gl.vertexAttribPointer(vPosition, 4, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(vPosition);
+
+  let vNormal = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vNormal);
+  gl.bufferData(gl.ARRAY_BUFFER, flatten(normalsArray), gl.STATIC_DRAW);
+
+  let vNormalPosition = gl.getAttribLocation(program, "vNormal");
+  gl.vertexAttribPointer(vNormalPosition, 4, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(vNormalPosition);
 function drawSkybox() {
     gl.enableVertexAttribArray(vTexCoord);
     gl.disableVertexAttribArray(vNormal);
