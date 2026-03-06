@@ -63,7 +63,7 @@ let vb = vec4(0.0, 0.942809, 0.333333, 1);
 let vc = vec4(-0.816497, -0.471405, 0.333333, 1);
 let vd = vec4(0.816497, -0.471405, 0.333333, 1);
 
-let lightPosition = vec4(1.0, 0.0, -1.0, 1.0);  //eye coordinates
+let lightPosition = vec4(0.0, 10.0, 0.0, 1.0);  //eye coordinates
 let lightAmbient = vec4(0.2, 0.2, 0.2, 1.0);
 let lightDiffuse = vec4(1.0, 1.0, 1.0, 1.0);
 let lightSpecular = vec4(1.0, 1.0, 1.0, 1.0);
