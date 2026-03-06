@@ -9,8 +9,8 @@
  2. Pretty much everything is rotating or moving around the scene, the electrons and the spaceship are also scaled down.
  3.
  4. There is a spotlight pointing at from the camera towards the center of the atom.
- 5. All of the particles are textured.
- 6.
+ 5. All the particles are textured.
+ 6. Camera can be toggled to rotate around the atom.
  7. The nucleus utilizes a hierarchical model.
  8. The point light casts a shadow on the objects floating in the background.
  9. The objects in the background reflect an image of the sun.
@@ -24,6 +24,7 @@
     'S': Toggles shadows
     'L': Toggles point light
     'T': Moves camera to a top-down view
+    'C': Rotates camera around atom
 
  - Program requirements -
 
@@ -46,7 +47,7 @@ accidentally removed that were not noticed until later.
  - Contributions -
 
  Sean - Skybox, Nucleus hierarchy, particle placement, reflections, complex objects, image hosting server, animation.
- Daniel - Spotlight, shadows, animation, particle textures, refraction, keyboard controls, camera animation.
+ Daniel - Spotlight, shadows, animation, particle textures, refraction, keyboard controls.
 
  - Credits -
 
