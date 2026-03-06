@@ -35,7 +35,6 @@ let electronPositions = [
 ];
 let electronSize = 0.5;
 
-let electronTransform;
 let isAnimating = true;
 let theta = 0;
 let alpha = 0;
@@ -47,18 +46,17 @@ let satelliteY = -10;
 let spaceshipX = 30;
 let spaceshipY = 0;
 
+let skyboxPoints = [];
+let skyboxTexCoords = [];
+let skyboxSize = 70.0;
+
 let pointsArray = [];
 let normalsArray = [];
 
 //Make sure these are set properly, 
 //or sphere could appear black
 let near = 0.1;
-let far = 100;
-
-let left = -10;
-let right = 10;
-let ytop = 10;
-let bottom = -10;
+let far = 150;
 
 let va = vec4(0.0, 0.0, -1.0, 1);
 let vb = vec4(0.0, 0.942809, 0.333333, 1);
@@ -143,6 +141,61 @@ function Particle(matrix, type) {
     this.type = type; 
 }
 
+function quad(a, b, c, d) {
+  let minT = 0.0;
+  let maxT = 1.0;
+
+  let texCoord = [
+    vec2(minT, minT),
+    vec2(minT, maxT),
+    vec2(maxT, maxT),
+    vec2(maxT, minT)
+  ];
+
+
+  let vertices = [
+    vec4( -skyboxSize, -skyboxSize,  skyboxSize, 1.0 ),
+    vec4( -skyboxSize,  skyboxSize,  skyboxSize, 1.0 ),
+    vec4( skyboxSize,  skyboxSize,  skyboxSize, 1.0 ),
+    vec4( skyboxSize, -skyboxSize,  skyboxSize, 1.0 ),
+    vec4( -skyboxSize, -skyboxSize, -skyboxSize, 1.0 ),
+    vec4( -skyboxSize,  skyboxSize, -skyboxSize, 1.0 ),
+    vec4( skyboxSize,  skyboxSize, -skyboxSize, 1.0 ),
+    vec4( skyboxSize, -skyboxSize, -skyboxSize, 1.0 )
+  ];
+
+  skyboxPoints.push(vertices[a]);
+  skyboxTexCoords.push(texCoord[0]);
+
+  skyboxPoints.push(vertices[b]);
+  skyboxTexCoords.push(texCoord[1]);
+
+  skyboxPoints.push(vertices[c]);
+  skyboxTexCoords.push(texCoord[2]);
+
+  skyboxPoints.push(vertices[a]);
+  skyboxTexCoords.push(texCoord[0]);
+
+  skyboxPoints.push(vertices[c]);
+  skyboxTexCoords.push(texCoord[2]);
+
+  skyboxPoints.push(vertices[d]);
+  skyboxTexCoords.push(texCoord[3]);
+}
+
+function colorCube()
+{
+  // Note the vertex order. This is important
+  // to ensure our texture is oriented correctly
+  // when it's mapped to the cube.
+  quad( 1, 0, 3, 2 );
+  quad( 2, 3, 7, 6 );
+  quad( 0, 4, 7, 3);
+  quad( 5, 1, 2, 6 );
+  quad( 6, 7, 4, 5 );
+  quad( 5, 4, 0, 1 );
+}
+
 function triangle(a, b, c) {
   pointsArray.push(a);
   pointsArray.push(b);
@@ -201,8 +254,53 @@ function handleKey(evt) {
   evt.preventDefault();
 }
 
+function configureDefaultSkybox() {
+
+  let tex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE6);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      skyboxSize*2,
+      skyboxSize*2,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      new Uint8Array([0, 0, 255, 255, 255, 0, 0, 255, 0, 0, 255, 255, 0, 255, 0, 255])
+  );
+
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+  gl.uniform1i(gl.getUniformLocation(program, "skyboxTex"), 6);
+}
+
+function configureSkybox(image) {
+
+  let tex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE6);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image);
+
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  gl.uniform1i(gl.getUniformLocation(program, "skyboxTex"), 6);
+}
+
 function makeColorAttachment(size) {
   const t = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE7);
   gl.bindTexture(gl.TEXTURE_2D, t);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -215,6 +313,7 @@ function makeColorAttachment(size) {
 
 function makeDepthTexture(size) {
   const tex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE7);
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -296,6 +395,16 @@ function loadObject(objFile, mtlFile) {
   models.push(createModelsFromOBJ(objData, modelMaterials, out));
 }
 
+function loadImage(file, onload) {
+  let image = new Image();
+  image.crossOrigin = "";
+  image.src = "http://localhost:" + port + "/" + file;
+  image.onload = function () {
+    onload(image);
+  };
+  return image;
+}
+
 
 window.onload = function init() {
   canvas = document.getElementById("gl-canvas");
@@ -317,7 +426,7 @@ window.onload = function init() {
   gl.useProgram(program);
 
   gl.enable(gl.DEPTH_TEST);
-  gl.enable(gl.CULL_FACE);
+  //gl.enable(gl.CULL_FACE);
   gl.clearColor(0.0, 0.0, 0.0, 1.0);
 
   window.addEventListener("keydown", handleKey);
@@ -388,7 +497,11 @@ window.onload = function init() {
 
   gl.uniform1i(shadowMapLoc, 0);
 
- 
+  colorCube();
+
+  configureDefaultSkybox();
+  loadImage("textures/skybox.jpg", configureSkybox);
+
   shadowFB = gl.createFramebuffer();
   shadowColorTex = makeColorAttachment(SHADOW_SIZE);
 
@@ -507,8 +620,8 @@ function render() {
   if (isSkyboxLoc) gl.uniform1i(isSkyboxLoc, 0);
 
   drawObjects();
-
   drawNucleus();
+  drawSkybox();
 
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -551,7 +664,7 @@ function buildNucleus() {
 
 function drawObjects() {
   if (isSkyboxLoc) gl.uniform1i(isSkyboxLoc, 0);
-  if (isObjectLoc) gl.uniform1f(isObjectLoc, 1.0);
+  if (isObjectLoc) gl.uniform1i(isObjectLoc, 1);
 
   let modelCount = 0;
 
@@ -640,7 +753,7 @@ function drawElectrons() {
 
 function drawNucleus() {
   if (isSkyboxLoc) gl.uniform1i(isSkyboxLoc, 0);
-  if (isObjectLoc) gl.uniform1f(isObjectLoc, 0.0);
+  if (isObjectLoc) gl.uniform1i(isObjectLoc, 0);
 
   let rotationMatrix = mult(rotateX(alpha), rotateY(beta));
   let queueMatrix = [translate(0, 0, 0)];
@@ -675,13 +788,31 @@ function drawNucleus() {
   }
 }
 
-function shuffle(array) {
-  let currentIndex = array.length;
-  while (currentIndex !== 0) {
-    let randomIndex = Math.floor(Math.random() * currentIndex);
-    currentIndex--;
-    [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
-  }
+function drawSkybox() {
+  let vPosition = gl.getAttribLocation(program, "vPosition");
+  let vNormal = gl.getAttribLocation( program, "vNormal" );
+  if (isSkyboxLoc) gl.uniform1i(isSkyboxLoc, 1);
+  if (isObjectLoc) gl.uniform1i(isObjectLoc, 0);
+  gl.disableVertexAttribArray( vNormal);
+
+  let vBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, flatten(skyboxPoints), gl.STATIC_DRAW);
+
+  gl.vertexAttribPointer(vPosition, 4, gl.FLOAT, false, 0, 0);
+
+  let vTexCoord = gl.getAttribLocation( program, "vTexCoord" );
+  let tBuffer = gl.createBuffer();
+  gl.bindBuffer( gl.ARRAY_BUFFER, tBuffer );
+  gl.bufferData( gl.ARRAY_BUFFER, flatten(skyboxTexCoords), gl.STATIC_DRAW );
+
+  gl.vertexAttribPointer( vTexCoord, 2, gl.FLOAT, false, 0, 0 );
+  gl.enableVertexAttribArray( vTexCoord );
+
+  let translation = translate(0, 0, 0);
+  gl.uniformMatrix4fv(translationLoc, false, flatten(translation));
+
+  gl.drawArrays( gl.TRIANGLES, 0, skyboxPoints.length );
 }
 
 function pushSphere() {

@@ -9,7 +9,8 @@ app.use((req, res, next) => {
     next();
 });
 
-app.get(/objects\/.*$/, (req, res) => {
+app.get(/\/.*$/, (req, res) => {
+    console.log(req.url);
     res.sendFile(__dirname + req.url);
 })
 
