@@ -140,6 +140,11 @@ let uUseTextureLoc;
 let protonTexture;
 let tex11Loc;
 
+let cameraTheta = 0;
+let cameraRadius = 20;
+let cameraHeight = 6;
+let cameraAnimating = true;
+
 function Tree(root) { 
     this.root = root; 
 }
@@ -469,7 +474,9 @@ function render() {
     theta += 0.5;
     alpha += 0.3;
     beta += 0.2;
-
+    if (cameraAnimating) {
+    cameraTheta += 0.4;
+    }
    
     satelliteTheta += 0.6;
     satelliteX += 0.025;
@@ -525,7 +532,7 @@ function render() {
     at = vec3(0, 0, 0);
     up = vec3(0, 0, -1);
   } else {
-    eye = vec3(0, 0, 20.0);
+    eye = vec3(cameraRadius * Math.cos(radians(cameraTheta)),cameraHeight,cameraRadius * Math.sin(radians(cameraTheta)));
     at = vec3(0, 0, 0);
     up = vec3(0, 1, 0);
   }
