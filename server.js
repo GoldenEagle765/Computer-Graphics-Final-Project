@@ -1,5 +1,6 @@
 const port = 6767;
 const express = require('express');
+const path = require('path');
 const app = express();
 
 app.use((req, res, next) => {
@@ -9,8 +10,8 @@ app.use((req, res, next) => {
     next();
 });
 
-app.get(/objects\/.*$/, (req, res) => {
-    res.sendFile(__dirname + req.url);
-})
+app.use(express.static(__dirname));
 
-app.listen(port);
+app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+});
