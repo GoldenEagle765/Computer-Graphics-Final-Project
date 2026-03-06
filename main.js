@@ -39,6 +39,8 @@ let isAnimating = true;
 let theta = 0;
 let alpha = 0;
 let beta = 0;
+let cameraAnimation = false;
+let cameraTheta = 0;
 
 let satelliteTheta = 0;
 let satelliteX = -10;
@@ -63,7 +65,7 @@ let vb = vec4(0.0, 0.942809, 0.333333, 1);
 let vc = vec4(-0.816497, -0.471405, 0.333333, 1);
 let vd = vec4(0.816497, -0.471405, 0.333333, 1);
 
-let lightPosition = vec4(1.0, 0.0, -1.0, 1.0);  //eye coordinates
+let lightPosition = vec4(0.0, 10.0, 0.0, 1.0);  //eye coordinates
 let lightAmbient = vec4(0.2, 0.2, 0.2, 1.0);
 let lightDiffuse = vec4(1.0, 1.0, 1.0, 1.0);
 let lightSpecular = vec4(1.0, 1.0, 1.0, 1.0);
@@ -257,6 +259,8 @@ function handleKey(evt) {
     lightingEnabled = !lightingEnabled;
   } else if (key === "t") {
     topDownView = !topDownView;
+  } else if (key === "c") {
+    cameraAnimation = !cameraAnimation;
   } else {
     return;
   }
@@ -322,7 +326,7 @@ function configureDefaultSkybox() {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-  gl.texImage2D(
+ gl.texImage2D(
     gl.TEXTURE_2D,
     0,
     gl.RGBA,
@@ -517,6 +521,7 @@ function loadTexture(file) {
 }
 
 
+
 function sphereUV(p) {
   let x = p[0];
   let y = p[1];
@@ -669,6 +674,9 @@ function render() {
     spaceshipY -= 0.01;
     if (spaceshipY < -70) spaceshipY = 80;
   }
+  if (cameraAnimation) {
+    cameraTheta += 0.03;
+  }
 
   if (shadowsEnabled && lightingEnabled) {
     isShadowPass = true;
@@ -711,7 +719,7 @@ function render() {
     at = vec3(0, 0, 0);
     up = vec3(0, 0, -1);
   } else {
-    eye = vec3(0, 0, 20.0);
+    eye = vec3(Math.sin(cameraTheta) * 20.0, 0, Math.cos(cameraTheta) * 20.0);
     at = vec3(0, 0, 0);
     up = vec3(0, 1, 0);
   }
@@ -981,4 +989,6 @@ function pushSphere() {
 
   gl.vertexAttribPointer(vTexCoordLoc, 2, gl.FLOAT, false, 0, 0);
   gl.enableVertexAttribArray(vTexCoordLoc);
+
 }
+
