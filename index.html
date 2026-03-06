@@ -35,6 +35,27 @@ void main()
 
     vec3 posEye = (mv * vPosition).xyz;
     vec3 nEye   = normalize((mv * vec4(vNormal.xyz, 0.0)).xyz);
+uniform bool isSkybox;
+
+void main()
+{
+    if (!isSkybox) {
+        //Diffuse
+        //Calculate L
+
+        vec4 nm = vPosition;
+        //nm.w = 1.0;     //To calculate the lighting vector, we need to convert the normal position
+        vec3 pos = (translation * nm).xyz;
+        L = normalize(lightPosition.xyz - pos);
+
+        //Calculate N
+        //Here, we need to convert the normal direction (not the position)
+        N = normalize(translation * vNormal).xyz;
+
+        //Specular
+        //V = origin - pos = -pos
+        V = normalize(-pos);
+    }
 
     vPosEye = posEye;
     vNormalEye = nEye;
@@ -132,12 +153,50 @@ void main()
     outColor.a = baseColor.a;
 
     gl_FragColor = outColor;
+uniform vec4 lightDiffuse, lightSpecular, lightAmbient;
+uniform vec4 materialDiffuse, materialSpecular, materialAmbient;
+uniform float shininess;
+varying vec3 L, N, V;
+uniform bool isSkybox;
+
+void main()
+{
+    if (!isSkybox) {
+        //Diffuse
+        //Id = Ld kd dot(l • n)
+        vec4 diffuse = lightDiffuse * materialDiffuse * dot(L, N);
+
+        //Specular
+        //r = (2 (l · n ) n) - l
+        vec3 R = 2.0 * (dot(L, N) * N) - L;
+
+        //Is = Ls Ks dot(V, R)^a
+        vec4 specular = lightSpecular * materialSpecular * pow(max(dot(V, R), 0.0), shininess);
+
+        //Ambient
+        //Ia = Laka
+        vec4 ambient = lightAmbient * materialAmbient;
+
+        vec4 fColor = diffuse + specular + ambient;
+        fColor.a = 1.0;
+        gl_FragColor = fColor;
+	}
+	else {
+	    gl_FragColor = texture2D(tex1, fTexCoord);
+	}
 }
 </script>
 
 <script type="text/javascript" src="lib/webgl-utils.js"></script>
 <script type="text/javascript" src="lib/initShaders.js"></script>
 <script type="text/javascript" src="lib/MV.js"></script>
+<script type="text/javascript" src="lib/cs4731pjt1.js"></script>
+
+<script type="text/javascript" src="object_handling/learn_webgl_obj_to_arrays.js"></script>
+<script type="text/javascript" src="object_handling/learn_webgl_vector3.js"></script>
+<script type="text/javascript" src="object_handling/jquery.js"></script>
+<script type="text/javascript" src="object_handling/learn_webgl_console_messages.js"></script>
+
 <script type="text/javascript" src="main.js"></script>
 
 <body>
