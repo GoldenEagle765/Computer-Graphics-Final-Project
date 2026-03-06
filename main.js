@@ -53,7 +53,7 @@ let skyboxSize = 70.0;
 let pointsArray = [];
 let normalsArray = [];
 
-//Make sure these are set properly, 
+//Make sure these are set properly,
 //or sphere could appear black
 let near = 0.1;
 let far = 150;
@@ -132,13 +132,13 @@ let isShadowPass = false;
 let models = [];
 let modelVecs = [];
 
-function Tree(root) { 
-    this.root = root; 
+function Tree(root) {
+    this.root = root;
 }
-function Particle(matrix, type) { 
-    this.children = []; 
-    this.matrix = matrix; 
-    this.type = type; 
+function Particle(matrix, type) {
+    this.children = [];
+    this.matrix = matrix;
+    this.type = type;
 }
 
 function quad(a, b, c, d) {
@@ -196,6 +196,12 @@ function colorCube()
   quad( 5, 4, 0, 1 );
 }
 
+let texCoordsArray = [];
+let vTexCoordLoc;
+let uUseTextureLoc;
+let protonTexture;
+let tex11Loc;
+
 function triangle(a, b, c) {
   pointsArray.push(a);
   pointsArray.push(b);
@@ -204,6 +210,10 @@ function triangle(a, b, c) {
   normalsArray.push(a[0], a[1], a[2], 0.0);
   normalsArray.push(b[0], b[1], b[2], 0.0);
   normalsArray.push(c[0], c[1], c[2], 0.0);
+
+  texCoordsArray.push(sphereUV(a));
+  texCoordsArray.push(sphereUV(b));
+  texCoordsArray.push(sphereUV(c));
 
   index += 3;
 }
@@ -405,6 +415,51 @@ function loadImage(file, onload) {
   return image;
 }
 
+function loadTexture(url) {
+  const texture = gl.createTexture();
+  const image = new Image();
+
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RGBA,
+    1,
+    1,
+    0,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    new Uint8Array([255, 255, 255, 255])
+  );
+
+  image.onload = function () {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  };
+
+  image.src = url;
+  return texture;
+}
+
+
+function sphereUV(p) {
+  let x = p[0];
+  let y = p[1];
+  let z = p[2];
+
+  let u = 0.5 + Math.atan2(z, x) / (2.0 * Math.PI);
+  let v = 0.5 - Math.asin(y) / Math.PI;
+
+  return vec2(u, v);
+}
+
 
 window.onload = function init() {
   canvas = document.getElementById("gl-canvas");
@@ -431,7 +486,7 @@ window.onload = function init() {
 
   window.addEventListener("keydown", handleKey);
 
-  
+
   loadObject("objects/Satellite/Satellite.obj", "objects/Satellite/Satellite.mtl");
   loadObject("objects/Spaceship/SpaceShipDetailed.obj", "objects/Spaceship/SpaceShipDetailed.mtl");
 
@@ -457,7 +512,7 @@ window.onload = function init() {
 
   tetrahedron(va, vb, vc, vd, numTimesToSubdivide);
 
-  
+ protonTexture = loadTexture("textures/Civil_Ensign_of_Switzerland_(Pantone).png");
   buildNucleus();
 
   modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
@@ -489,7 +544,7 @@ window.onload = function init() {
   isSkyboxLoc = gl.getUniformLocation(program, "isSkybox");
   isObjectLoc = gl.getUniformLocation(program, "isObject");
 
-  
+
   gl.uniform4fv(gl.getUniformLocation(program, "lightDiffuse"), flatten(lightDiffuse));
   gl.uniform4fv(gl.getUniformLocation(program, "lightSpecular"), flatten(lightSpecular));
   gl.uniform4fv(gl.getUniformLocation(program, "lightAmbient"), flatten(lightAmbient));
@@ -502,8 +557,13 @@ window.onload = function init() {
   configureDefaultSkybox();
   loadImage("textures/skybox.jpg", configureSkybox);
 
+ vTexCoordLoc = gl.getAttribLocation(program, "vTexCoord");
+ uUseTextureLoc = gl.getUniformLocation(program, "uUseTexture");
+  tex11Loc = gl.getUniformLocation(program, "tex11");
   shadowFB = gl.createFramebuffer();
   shadowColorTex = makeColorAttachment(SHADOW_SIZE);
+
+  gl.uniform1i(tex11Loc, 11);
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFB);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, shadowColorTex, 0);
@@ -524,7 +584,7 @@ function render() {
     alpha += 0.3;
     beta += 0.2;
 
-   
+
     satelliteTheta += 0.6;
     satelliteX += 0.025;
     if (satelliteX > 60) satelliteX = -60;
@@ -664,8 +724,8 @@ function buildNucleus() {
 
 function drawObjects() {
   if (isSkyboxLoc) gl.uniform1i(isSkyboxLoc, 0);
-  if (isObjectLoc) gl.uniform1i(isObjectLoc, 1);
-
+  if (isObjectLoc) gl.uniform1f(isObjectLoc, 1.0);
+  if (uUseTextureLoc) gl.uniform1i(uUseTextureLoc, 0);
   let modelCount = 0;
 
   for (let i = 0; i < models.length; i++) {
@@ -693,13 +753,13 @@ function drawObjects() {
       gl.vertexAttribPointer(vNormalPosition, 4, gl.FLOAT, false, 0, 0);
       gl.enableVertexAttribArray(vNormalPosition);
 
-    
+
       gl.uniform4fv(gl.getUniformLocation(program, "materialDiffuse"), flatten(mat.Kd));
       gl.uniform4fv(gl.getUniformLocation(program, "materialSpecular"), flatten(mat.Ks));
       gl.uniform4fv(gl.getUniformLocation(program, "materialAmbient"), flatten(mat.Ka));
       gl.uniform1f(gl.getUniformLocation(program, "shininess"), mat.Ns);
 
-      
+
       gl.uniform4fv(baseColorLoc, flatten(vec4(1, 1, 1, 1)));
 
       let translation = translate(0, 0, 0);
@@ -727,6 +787,7 @@ function drawObjects() {
 function drawElectrons() {
   if (isSkyboxLoc) gl.uniform1i(isSkyboxLoc, 0);
   if (isObjectLoc) gl.uniform1i(isObjectLoc, 0);
+  if (uUseTextureLoc) gl.uniform1i(uUseTextureLoc, 0);
 
   for (let j = 0; j < electronPositions.length; j++) {
     pushSphere();
@@ -769,8 +830,17 @@ function drawNucleus() {
 
     gl.uniformMatrix4fv(translationLoc, false, flatten(matrix));
 
-    if (particle.type === 1) gl.uniform4fv(baseColorLoc, flatten(vec4(1, 0, 0, 1)));
-    else gl.uniform4fv(baseColorLoc, flatten(vec4(1, 1, 1, 1)));
+    if (particle.type === 1) {
+    gl.uniform1i(uUseTextureLoc, 1);
+
+    gl.activeTexture(gl.TEXTURE11);
+    gl.bindTexture(gl.TEXTURE_2D, protonTexture);
+
+    gl.uniform4fv(baseColorLoc, flatten(vec4(1, 1, 1, 1)));
+    } else {
+    gl.uniform1i(uUseTextureLoc, 0);
+    gl.uniform4fv(baseColorLoc, flatten(vec4(1, 1, 1, 1)));
+    }
 
     bindShadowForObject(matrix);
 
@@ -789,30 +859,30 @@ function drawNucleus() {
 }
 
 function drawSkybox() {
-  let vPosition = gl.getAttribLocation(program, "vPosition");
-  let vNormal = gl.getAttribLocation( program, "vNormal" );
-  if (isSkyboxLoc) gl.uniform1i(isSkyboxLoc, 1);
-  if (isObjectLoc) gl.uniform1i(isObjectLoc, 0);
-  gl.disableVertexAttribArray( vNormal);
+    let vPosition = gl.getAttribLocation(program, "vPosition");
+    let vNormal = gl.getAttribLocation( program, "vNormal" );
+    if (isSkyboxLoc) gl.uniform1i(isSkyboxLoc, 1);
+    if (isObjectLoc) gl.uniform1i(isObjectLoc, 0);
+    gl.disableVertexAttribArray( vNormal);
 
-  let vBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, flatten(skyboxPoints), gl.STATIC_DRAW);
+    let vBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(skyboxPoints), gl.STATIC_DRAW);
 
-  gl.vertexAttribPointer(vPosition, 4, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribPointer(vPosition, 4, gl.FLOAT, false, 0, 0);
 
-  let vTexCoord = gl.getAttribLocation( program, "vTexCoord" );
-  let tBuffer = gl.createBuffer();
-  gl.bindBuffer( gl.ARRAY_BUFFER, tBuffer );
-  gl.bufferData( gl.ARRAY_BUFFER, flatten(skyboxTexCoords), gl.STATIC_DRAW );
+    let vTexCoord = gl.getAttribLocation( program, "vTexCoord" );
+    let tBuffer = gl.createBuffer();
+    gl.bindBuffer( gl.ARRAY_BUFFER, tBuffer );
+    gl.bufferData( gl.ARRAY_BUFFER, flatten(skyboxTexCoords), gl.STATIC_DRAW );
 
-  gl.vertexAttribPointer( vTexCoord, 2, gl.FLOAT, false, 0, 0 );
-  gl.enableVertexAttribArray( vTexCoord );
+    gl.vertexAttribPointer( vTexCoord, 2, gl.FLOAT, false, 0, 0 );
+    gl.enableVertexAttribArray( vTexCoord );
 
-  let translation = translate(0, 0, 0);
-  gl.uniformMatrix4fv(translationLoc, false, flatten(translation));
+    let translation = translate(0, 0, 0);
+    gl.uniformMatrix4fv(translationLoc, false, flatten(translation));
 
-  gl.drawArrays( gl.TRIANGLES, 0, skyboxPoints.length );
+    gl.drawArrays( gl.TRIANGLES, 0, skyboxPoints.length );
 }
 
 function pushSphere() {
@@ -824,11 +894,18 @@ function pushSphere() {
   gl.vertexAttribPointer(vPosition, 4, gl.FLOAT, false, 0, 0);
   gl.enableVertexAttribArray(vPosition);
 
-  let vNormal = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, vNormal);
+  let nBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, nBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, flatten(normalsArray), gl.STATIC_DRAW);
 
-  let vNormalPosition = gl.getAttribLocation(program, "vNormal");
-  gl.vertexAttribPointer(vNormalPosition, 4, gl.FLOAT, false, 0, 0);
-  gl.enableVertexAttribArray(vNormalPosition);
+  let vNormal = gl.getAttribLocation(program, "vNormal");
+  gl.vertexAttribPointer(vNormal, 4, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(vNormal);
+
+  let tBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, tBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, flatten(texCoordsArray), gl.STATIC_DRAW);
+
+  gl.vertexAttribPointer(vTexCoordLoc, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(vTexCoordLoc);
 }
