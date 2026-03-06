@@ -9,7 +9,7 @@ let index = 0;
 
 
 let nucleusPositions = [
-  //vec3(0, 0, 0), vec3(0, 0, 1.5), vec3(1.5, 0, 0), vec3(-1.5, 0, 0), vec3(0, 1.5, 0), vec3(0, -1.5, 0), vec3(0, 0, -1.5),
+  vec3(0, 0, 0), vec3(0, 0, 1.5), vec3(1.5, 0, 0), vec3(-1.5, 0, 0), vec3(0, 1.5, 0), vec3(0, -1.5, 0), vec3(0, 0, -1.5),
 
   vec3(0, 1.06, 1.06), vec3(-0.92, -0.53, 1.06), vec3(0.92, -0.53, 1.06),
   vec3(1.06, -1.06, 0), vec3(1.06, 0.53, -0.92), vec3(1.06, 0.53, 0.92),
@@ -19,7 +19,6 @@ let nucleusPositions = [
   vec3(0, 1.06, -1.06), vec3(-0.92, -0.53, -1.06), vec3(0.92, -0.53, -1.06)
 ];
 
-let nucleusTypes = [0,0,1,1]; // 0 is neutron, 1 is proton
 let numNeutrons = 10;
 let numProtons = 10;
 
@@ -171,7 +170,7 @@ function divideTriangle(a, b, c, count) {
     divideTriangle(bc, c, ac, count - 1);
     divideTriangle(ab, bc, ac, count - 1);
   } else {
-    triangle(a, b, c);
+    triangle(c, b, a);
   }
 }
 
@@ -523,20 +522,13 @@ function render() {
 
 
 function buildNucleus() {
-  if (numNeutrons + numProtons > 0 && nucleusPositions.length >= (numNeutrons + numProtons)) {
-    let types = [];
-    let nN = numNeutrons;
-    let nP = numProtons;
-    let total = nN + nP;
+  let nucleusTypes =[];
+  let total = numNeutrons + numProtons;
 
-    for (let i = 0; i < total; i++) {
-      let roll = Math.random() * (nN + nP);
-      if (roll > nN) { types.push(1); nP--; }
-      else { types.push(0); nN--; }
-    }
-    nucleusTypes = types;
-  } else {
-    shuffle(nucleusTypes);
+  for (let i = 0; i < total; i++) {
+    let roll = Math.random() * (numNeutrons + numProtons);
+    if (roll > numNeutrons) { nucleusTypes.push(1); numProtons--; }
+    else { nucleusTypes.push(0); numNeutrons--; }
   }
 
   let root = new Particle(translate(nucleusPositions[0][0], nucleusPositions[0][1], nucleusPositions[0][2]), nucleusTypes[0]);
@@ -616,12 +608,12 @@ function drawObjects() {
     }
   }
 
-  if (isObjectLoc) gl.uniform1f(isObjectLoc, 0.0);
+  if (isObjectLoc) gl.uniform1i(isObjectLoc, 0);
 }
 
 function drawElectrons() {
   if (isSkyboxLoc) gl.uniform1i(isSkyboxLoc, 0);
-  if (isObjectLoc) gl.uniform1f(isObjectLoc, 0.0);
+  if (isObjectLoc) gl.uniform1i(isObjectLoc, 0);
 
   for (let j = 0; j < electronPositions.length; j++) {
     pushSphere();
