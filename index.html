@@ -9,6 +9,7 @@ attribute vec2 vTexCoord;
 varying vec2 fTexCoord;
 
 uniform mat4 modelViewMatrix;
+uniform mat4 modelViewInverseMatrix;
 uniform mat4 projectionMatrix;
 uniform mat4 translation;
 
@@ -22,6 +23,7 @@ varying vec3 vPosEye;
 varying vec3 vNormalEye;
 varying vec4 v_projectedTexcoord;
 varying vec3 vWorldPos;
+varying vec3 viewDirWorld, N_world;
 
 void main()
 {
@@ -29,26 +31,32 @@ void main()
     vWorldPos = worldPosition.xyz;
     fTexCoord = vTexCoord;
 
-    if (uShadowPass) {
-        gl_Position = uLightViewProj * worldPosition;
-        return;
-    }
-
     if (isSkybox) {
+        
         gl_Position = projectionMatrix * modelViewMatrix * translation * vPosition;
-        return;
     }
-    mat4 mv = modelViewMatrix * translation;
 
-    vec3 posEye = (mv * vPosition).xyz;
-    vec3 nEye= normalize((mv * vec4(vNormal.xyz, 0.0)).xyz);
+    else if (uShadowPass) {
+        gl_Position = uLightViewProj * worldPosition;
+    }
 
-    vPosEye = posEye;
-    vNormalEye = nEye;
+    else {
+        mat4 mv = modelViewMatrix * translation;
 
-    v_projectedTexcoord = textureMatrix * worldPosition;
+        vec3 posEye = (mv * vPosition).xyz;
+        vec3 nEye   = normalize((mv * vec4(vNormal.xyz, 0.0)).xyz);
 
-    gl_Position = projectionMatrix * vec4(posEye, 1.0);
+        vPosEye = posEye;
+        vNormalEye = nEye;
+
+        v_projectedTexcoord = textureMatrix * worldPosition;
+
+        vec3 camPosWorld = (modelViewInverseMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        viewDirWorld = vPosition.xyz - camPosWorld;
+        N_world = normalize(vNormal).xyz;
+
+        gl_Position = projectionMatrix * vec4(posEye, 1.0);
+    }
 }
 </script>
 
@@ -83,9 +91,12 @@ varying vec3 vPosEye;
 varying vec3 vNormalEye;
 varying vec4 v_projectedTexcoord;
 varying vec3 vWorldPos;
+varying vec3 viewDirWorld, N_world;
 
 uniform sampler2D tex1;
-uniform sampler2D tex11; 
+uniform sampler2D tex11;
+uniform sampler2D skyboxTex;
+uniform samplerCube texMap;
 varying vec2 fTexCoord;
 
 
@@ -106,83 +117,87 @@ float shadowFactor() {
 
 void main()
 {
-    if (uShadowPass) {
-        gl_FragColor = vec4(0.0,0.0,0.0,1.0);
-        return;
-    }
-
     if (isSkybox) {
-        gl_FragColor = texture2D(tex1, fTexCoord);
-        return;
+        gl_FragColor = texture2D(skyboxTex, fTexCoord);
     }
 
-    vec3 ambient = vec3(0.18);
-
-    if (!uLightingEnabled) {
-        vec4 amb = (isObject) ? materialAmbient : baseColor;
-        vec4 outColor = vec4(ambient, 1.0) * amb;
-        outColor.a = amb.a;
-        gl_FragColor = outColor;
-        return;
+    else if (uShadowPass) {
+        gl_FragColor = vec4(0.0,0.0,0.0,1.0);
     }
 
-    vec3 N = normalize(vNormalEye);
-    vec3 V = normalize(-vPosEye);
+    else {
+        vec3 ambient = vec3(0.18);
 
-    
-    vec3 L = normalize(uPointLightPosWorld - vWorldPos);
+        if (!uLightingEnabled) {
+            vec4 amb = (isObject) ? materialAmbient : baseColor;
+            vec4 outColor = vec4(ambient, 1.0) * amb;
+            outColor.a = amb.a;
+            gl_FragColor = outColor;
+        }
 
-    float ndotl = max(dot(N, L), 0.0);
-    vec3 R = reflect(-L, N);
-    float spec = pow(max(dot(V, R), 0.0), shininess);
+        else {
+            vec3 N = normalize(vNormalEye);
+            vec3 V = normalize(-vPosEye);
 
-    float s = shadowFactor();
 
-    vec3 diffuseTerm;
-    vec3 specTerm;
+            vec3 L = normalize(uPointLightPosWorld - vWorldPos);
 
-    if (isObject) {
-        diffuseTerm = (lightDiffuse.rgb * materialDiffuse.rgb) * ndotl;
-        specTerm = (lightSpecular.rgb * materialSpecular.rgb) * (0.35 * spec);
-        ambient = lightAmbient.rgb * materialAmbient.rgb; 
-    } else {
-        diffuseTerm = vec3(ndotl);
-        specTerm    = 0.35 * vec3(spec);
+            float ndotl = max(dot(N, L), 0.0);
+            vec3 R = reflect(-L, N);
+            float spec = pow(max(dot(V, R), 0.0), shininess);
+
+            float s = shadowFactor();
+
+            vec3 diffuseTerm;
+            vec3 specTerm;
+
+            if (isObject) {
+                diffuseTerm = (lightDiffuse.rgb * materialDiffuse.rgb) * ndotl;
+                specTerm = (lightSpecular.rgb * materialSpecular.rgb) * (0.35 * spec);
+                ambient = lightAmbient.rgb * materialAmbient.rgb;
+            } else {
+                diffuseTerm = vec3(ndotl);
+                specTerm    = 0.35 * vec3(spec);
+            }
+
+            vec3 lighting = ambient + s * (diffuseTerm + specTerm);
+
+            vec3 Lspot = normalize(uSpotPosEye - vPosEye);
+            float ndotl_spot = max(dot(N, Lspot), 0.0);
+
+            vec3 Rspot = reflect(-Lspot, N);
+            float spec_spot = pow(max(dot(V, Rspot), 0.0), shininess);
+
+            vec3 lightToFrag = normalize(vWorldPos - uSpotPosWorld);
+            float cosAngle = dot(normalize(uSpotDirWorld), lightToFrag);
+
+            float spotAtten = 0.0;
+            if (cosAngle > uSpotCosCutoff) {
+                spotAtten = pow(cosAngle, uSpotExponent);
+            }
+
+            vec3 spotDiffuse = spotAtten * uSpotColor.rgb * ndotl_spot;
+            vec3 spotSpec    = spotAtten * uSpotColor.rgb * (0.35 * spec_spot);
+
+            lighting += (spotDiffuse + spotSpec);
+
+            vec4 surf;
+            if (isObject) {
+                vec3 refl = reflect(viewDirWorld, N_world);
+                vec4 texColor = textureCube(texMap, refl);
+                surf = vec4(1.0, 1.0, 1.0, 1.0) * 0.5 + texColor * 0.5;
+
+            } else if (uUseTexture) {
+                surf = texture2D(tex11, fTexCoord);
+            } else {
+                surf = baseColor;
+            }
+            vec4 outColor = vec4(lighting, 1.0) * surf;
+            outColor.a = surf.a;
+
+            gl_FragColor = outColor;
+        }
     }
-
-    vec3 lighting = ambient + s * (diffuseTerm + specTerm);
-
-    vec3 Lspot = normalize(uSpotPosEye - vPosEye);
-    float ndotl_spot = max(dot(N, Lspot), 0.0);
-
-    vec3 Rspot = reflect(-Lspot, N);
-    float spec_spot = pow(max(dot(V, Rspot), 0.0), shininess);
-
-    vec3 lightToFrag = normalize(vWorldPos - uSpotPosWorld);
-    float cosAngle = dot(normalize(uSpotDirWorld), lightToFrag);
-
-    float spotAtten = 0.0;
-    if (cosAngle > uSpotCosCutoff) {
-        spotAtten = pow(cosAngle, uSpotExponent);
-    }
-
-    vec3 spotDiffuse = spotAtten * uSpotColor.rgb * ndotl_spot;
-    vec3 spotSpec = spotAtten * uSpotColor.rgb * (0.35 * spec_spot);
-
-    lighting += (spotDiffuse + spotSpec);
-
-    vec4 surf;
-    if (isObject) {
-        surf = vec4(1.0, 1.0, 1.0, 1.0);
-    } else if (uUseTexture) {
-        surf = texture2D(tex11, fTexCoord);
-    } else {
-        surf = baseColor;
-    }
-    vec4 outColor = vec4(lighting, 1.0) * surf;
-    outColor.a = surf.a;
-
-    gl_FragColor = outColor;
 }
 </script>
 
