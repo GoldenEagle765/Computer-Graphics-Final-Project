@@ -32,7 +32,7 @@ void main()
     fTexCoord = vTexCoord;
 
     if (isSkybox) {
-        fTexCoord = vTexCoord;
+        
         gl_Position = projectionMatrix * modelViewMatrix * translation * vPosition;
     }
 
@@ -44,7 +44,7 @@ void main()
         mat4 mv = modelViewMatrix * translation;
 
         vec3 posEye = (mv * vPosition).xyz;
-        vec3 nEye   = normalize((mv * vec4(vNormal.xyz, 0.0)).xyz);
+        vec3 nEye = normalize((mv * vec4(vNormal.xyz, 0.0)).xyz);
 
         vPosEye = posEye;
         vNormalEye = nEye;

@@ -1,16 +1,17 @@
 let canvas;
 let gl;
 let program;
+
+//The port to be used by the server.
 let port = 6767;
 
 let numTimesToSubdivide = 3;
 
 let index = 0;
 
-
+//Set of nucleus positions to be drawn.
 let nucleusPositions = [
   vec3(0, 0, 0), vec3(0, 0, 1.5), vec3(1.5, 0, 0), vec3(-1.5, 0, 0), vec3(0, 1.5, 0), vec3(0, -1.5, 0), vec3(0, 0, -1.5),
-
   vec3(0, 1.06, 1.06), vec3(-0.92, -0.53, 1.06), vec3(0.92, -0.53, 1.06),
   vec3(1.06, -1.06, 0), vec3(1.06, 0.53, -0.92), vec3(1.06, 0.53, 0.92),
   vec3(-1.06, -1.06, 0), vec3(-1.06, 0.53, -0.92), vec3(-1.06, 0.53, 0.92),
@@ -26,15 +27,15 @@ let rootChildren = 6;
 let branchChildren = 3;
 let nucleus;
 
+//The set of positions in which to draw the electrons.
 let electronPositions = [
-  //vec3(5, 0, 0), vec3(-5, 0, 0),
-
   vec3(10, 0, 0), vec3(-10, 0, 0), vec3(15,0,0), vec3(-15,0,0),
   vec3(0,15,0), vec3(0,-15,0), vec3(10.6,10.6,0), vec3(-10.6,-10.6,0),
   vec3(10.6,-10.6,0), vec3(-10.6,10.6,0)
 ];
 let electronSize = 0.5;
 
+//Animation parameters
 let isAnimating = true;
 let theta = 0;
 let alpha = 0;
@@ -65,15 +66,18 @@ let vb = vec4(0.0, 0.942809, 0.333333, 1);
 let vc = vec4(-0.816497, -0.471405, 0.333333, 1);
 let vd = vec4(0.816497, -0.471405, 0.333333, 1);
 
+//Light parameters
 let lightPosition = vec4(0.0, 10.0, 0.0, 1.0);  //eye coordinates
 let lightAmbient = vec4(0.2, 0.2, 0.2, 1.0);
 let lightDiffuse = vec4(1.0, 1.0, 1.0, 1.0);
 let lightSpecular = vec4(1.0, 1.0, 1.0, 1.0);
 
+//Material Parameters
 let materialAmbient = vec4(1.0, 0.0, 1.0, 1.0);
 let materialDiffuse = vec4(1.0, 1.0, 0.0, 1.0);
 let materialSpecular = vec4(1.0, 1.0, 1.0, 1.0);
 let materialShininess = 20.0;
+
 
 let modelViewMatrix, projectionMatrix;
 let modelViewMatrixLoc, projectionMatrixLoc;
@@ -98,6 +102,7 @@ let pointLightPosWorld = vec3(0.0, 2.0, 0.0);
 let shadowNear = 0.1;
 let shadowFar = 40.0;
 
+//Face directions used by shadow mapping.
 const FACE_DIRS = [
   { dir: vec3( 1, 0, 0), up: vec3(0,-1, 0) },
   { dir: vec3(-1, 0, 0), up: vec3(0,-1, 0) },
@@ -120,29 +125,30 @@ let uLightingEnabledLoc;
 
 let uPointLightPosWorldLoc;
 
-
 let uSpotPosWorldLoc, uSpotDirWorldLoc, uSpotCosCutoffLoc, uSpotExponentLoc, uSpotColorLoc;
 let uSpotPosEyeLoc, uSpotDirEyeLoc;
 
-
 let isSkyboxLoc;
 let isObjectLoc;
-
 
 let isShadowPass = false;
 
 let models = [];
 let modelVecs = [];
 
+//Tree(): This function creates a tree with the nucleus as its root.
 function Tree(root) {
     this.root = root;
 }
+
+//Particle(): This function creates a particle node in the tree and defines its parameters.
 function Particle(matrix, type) {
     this.children = [];
     this.matrix = matrix;
     this.type = type;
 }
 
+//This function creates one side of the skybox.
 function quad(a, b, c, d) {
   let minT = 0.0;
   let maxT = 1.0;
@@ -153,7 +159,6 @@ function quad(a, b, c, d) {
     vec2(maxT, maxT),
     vec2(maxT, minT)
   ];
-
 
   let vertices = [
     vec4( -skyboxSize, -skyboxSize,  skyboxSize, 1.0 ),
@@ -185,11 +190,9 @@ function quad(a, b, c, d) {
   skyboxTexCoords.push(texCoord[3]);
 }
 
+//colorCube(): This function builds the full skybox.
 function colorCube()
 {
-  // Note the vertex order. This is important
-  // to ensure our texture is oriented correctly
-  // when it's mapped to the cube.
   quad( 1, 0, 3, 2 );
   quad( 2, 3, 7, 6 );
   quad( 0, 4, 7, 3);
@@ -204,6 +207,7 @@ let uUseTextureLoc;
 let protonTexture;
 let tex11Loc;
 
+//This function uploads one of the triangles in the sphere. 
 function triangle(a, b, c) {
   pointsArray.push(a);
   pointsArray.push(b);
@@ -220,6 +224,7 @@ function triangle(a, b, c) {
   index += 3;
 }
 
+//This function breaks down  a triangle to show a sphere.
 function divideTriangle(a, b, c, count) {
   if (count > 0) {
     let ab = mix(a, b, 0.5);
@@ -239,6 +244,7 @@ function divideTriangle(a, b, c, count) {
   }
 }
 
+//This function subdivides a tetrahedron to create a sphere.
 function tetrahedron(a, b, c, d, n) {
   divideTriangle(a, b, c, n);
   divideTriangle(d, c, b, n);
@@ -246,6 +252,7 @@ function tetrahedron(a, b, c, d, n) {
   divideTriangle(a, c, d, n);
 }
 
+//handleKey(): This function applies controls when the user presses a key.
 function handleKey(evt) {
   if (evt.repeat) return;
 
@@ -268,6 +275,7 @@ function handleKey(evt) {
   evt.preventDefault();
 }
 
+//configureDefaultCubeMap(): This function creates a default cube map
 function configureDefaultCubeMap() {
   let cubeMap = gl.createTexture();
   gl.activeTexture(gl.TEXTURE8);
@@ -296,6 +304,7 @@ function configureDefaultCubeMap() {
   gl.uniform1i(gl.getUniformLocation(program, "texMap"), 8);
 }
 
+//configureCubeMap(); This function takes an image and creates a cube map with that image on all sides.
 function configureCubeMap(image) {
   let cubeMap = gl.createTexture();
   gl.activeTexture(gl.TEXTURE8);
@@ -317,6 +326,7 @@ function configureCubeMap(image) {
   gl.uniform1i(gl.getUniformLocation(program, "texMap"), 8);
 }
 
+//configureDefaultSkybox(): This function creates a default texture for the skybox.
 function configureDefaultSkybox() {
 
   let tex = gl.createTexture();
@@ -344,6 +354,7 @@ function configureDefaultSkybox() {
   gl.uniform1i(gl.getUniformLocation(program, "skyboxTex"), 6);
 }
 
+//configureSkybox(): This function takes an image and uses it as the texture for the skybox.
 function configureSkybox(image) {
 
   let tex = gl.createTexture();
@@ -361,6 +372,7 @@ function configureSkybox(image) {
   gl.uniform1i(gl.getUniformLocation(program, "skyboxTex"), 6);
 }
 
+//makeColorAttachment(): This function creates a texture that is used for the shadow buffer.
 function makeColorAttachment(size) {
   const t = gl.createTexture();
   gl.activeTexture(gl.TEXTURE7);
@@ -374,6 +386,7 @@ function makeColorAttachment(size) {
   return t;
 }
 
+//makeDepthTexture(): This function creates a depth texture for a shadow map.
 function makeDepthTexture(size) {
   const tex = gl.createTexture();
   gl.activeTexture(gl.TEXTURE7);
@@ -396,6 +409,7 @@ function makeDepthTexture(size) {
   return tex;
 }
 
+//updatePointLightShadowMatrices(): This function determines the projection mateices for calculating shadows from a point light.
 function updatePointLightShadowMatrices() {
   const proj = perspective(90, 1.0, shadowNear, shadowFar);
 
@@ -412,6 +426,7 @@ function updatePointLightShadowMatrices() {
   }
 }
 
+//pickShadowFace(): This function determines which face of the cube-map is the closest to the direction of a vector.
 function pickShadowFace(v) {
   const ax = Math.abs(v[0]), ay = Math.abs(v[1]), az = Math.abs(v[2]);
   if (ax >= ay && ax >= az) return (v[0] >= 0) ? 0 : 1;
@@ -419,10 +434,12 @@ function pickShadowFace(v) {
   return (v[2] >= 0) ? 4 : 5;
 }
 
+//worldCenterFromModelMatrix(): This function determines the center of the world from a model matrix 
 function worldCenterFromModelMatrix(m) {
   return vec3(m[0][3], m[1][3], m[2][3]);
 }
 
+//bindShadowForObject(): This function binds a shadow texture for a particular object.
 function bindShadowForObject(modelMatrix) {
   if (isShadowPass) return;
   if (!(shadowsEnabled && lightingEnabled)) return;
@@ -436,7 +453,7 @@ function bindShadowForObject(modelMatrix) {
   gl.bindTexture(gl.TEXTURE_2D, shadowDepthTex[face]);
 }
 
-
+//loadObject(): This function loads an object from a server.
 function loadObject(objFile, mtlFile) {
   let objData, mtlData;
 
@@ -458,6 +475,7 @@ function loadObject(objFile, mtlFile) {
   models.push(createModelsFromOBJ(objData, modelMaterials, out));
 }
 
+//loadImage(): This function loads an image.
 function loadImage(file, onload) {
   let image = new Image();
   image.crossOrigin = "";
@@ -468,6 +486,7 @@ function loadImage(file, onload) {
   return image;
 }
 
+//loadTexture(): This function loads and initializes a texture.
 function loadTexture(file) {
   gl.activeTexture(gl.TEXTURE11);
   const texture = gl.createTexture();
@@ -515,8 +534,7 @@ function loadTexture(file) {
   return texture;
 }
 
-
-
+//sphereUV(): This function takes a point and converts it into UV coordinates.
 function sphereUV(p) {
   let x = p[0];
   let y = p[1];
@@ -554,7 +572,6 @@ window.onload = function init() {
 
   window.addEventListener("keydown", handleKey);
 
-
   loadObject("objects/Satellite/Satellite.obj", "objects/Satellite/Satellite.mtl");
   loadObject("objects/Spaceship/SpaceShipDetailed.obj", "objects/Spaceship/SpaceShipDetailed.mtl");
 
@@ -580,7 +597,7 @@ window.onload = function init() {
 
   tetrahedron(va, vb, vc, vd, numTimesToSubdivide);
 
- protonTexture = loadTexture("textures/Civil_Ensign_of_Switzerland_(Pantone).png");
+  protonTexture = loadTexture("textures/Civil_Ensign_of_Switzerland_(Pantone).png");
   buildNucleus();
 
   modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
@@ -613,7 +630,6 @@ window.onload = function init() {
   isSkyboxLoc = gl.getUniformLocation(program, "isSkybox");
   isObjectLoc = gl.getUniformLocation(program, "isObject");
 
-
   gl.uniform4fv(gl.getUniformLocation(program, "lightDiffuse"), flatten(lightDiffuse));
   gl.uniform4fv(gl.getUniformLocation(program, "lightSpecular"), flatten(lightSpecular));
   gl.uniform4fv(gl.getUniformLocation(program, "lightAmbient"), flatten(lightAmbient));
@@ -628,8 +644,8 @@ window.onload = function init() {
   loadImage("textures/skybox.jpg", configureSkybox);
   loadImage("textures/sun.webp", configureCubeMap);
 
- vTexCoordLoc = gl.getAttribLocation(program, "vTexCoord");
- uUseTextureLoc = gl.getUniformLocation(program, "uUseTexture");
+  vTexCoordLoc = gl.getAttribLocation(program, "vTexCoord");
+  uUseTextureLoc = gl.getUniformLocation(program, "uUseTexture");
   tex11Loc = gl.getUniformLocation(program, "tex11");
   shadowFB = gl.createFramebuffer();
   shadowColorTex = makeColorAttachment(SHADOW_SIZE);
@@ -648,13 +664,12 @@ window.onload = function init() {
   render();
 };
 
-
+//render(): This function draws the model when called.
 function render() {
   if (isAnimating) {
     theta += 0.5;
     alpha += 0.3;
     beta += 0.2;
-
 
     satelliteTheta += 0.6;
     satelliteX += 0.025;
@@ -769,7 +784,7 @@ function render() {
   requestAnimFrame(render);
 }
 
-
+//buildNucleus(): This function builds the nucleus as a hierarchical model of neutrons and protons.
 function buildNucleus() {
   let nucleusTypes =[];
   let total = numNeutrons + numProtons;
@@ -798,6 +813,7 @@ function buildNucleus() {
   }
 }
 
+//drawObjects(): This function draws the imported obj object.
 function drawObjects() {
   if (isSkyboxLoc) gl.uniform1i(isSkyboxLoc, 0);
   if (isObjectLoc) gl.uniform1f(isObjectLoc, 1.0);
@@ -829,12 +845,10 @@ function drawObjects() {
       gl.vertexAttribPointer(vNormalPosition, 4, gl.FLOAT, false, 0, 0);
       gl.enableVertexAttribArray(vNormalPosition);
 
-
       gl.uniform4fv(gl.getUniformLocation(program, "materialDiffuse"), flatten(mat.Kd));
       gl.uniform4fv(gl.getUniformLocation(program, "materialSpecular"), flatten(mat.Ks));
       gl.uniform4fv(gl.getUniformLocation(program, "materialAmbient"), flatten(mat.Ka));
       gl.uniform1f(gl.getUniformLocation(program, "shininess"), mat.Ns);
-
 
       gl.uniform4fv(baseColorLoc, flatten(vec4(1, 1, 1, 1)));
 
@@ -860,6 +874,7 @@ function drawObjects() {
   if (isObjectLoc) gl.uniform1i(isObjectLoc, 0);
 }
 
+//drawElectrons(): This function draws the electrons.
 function drawElectrons() {
   if (isSkyboxLoc) gl.uniform1i(isSkyboxLoc, 0);
   if (isObjectLoc) gl.uniform1i(isObjectLoc, 0);
@@ -888,6 +903,7 @@ function drawElectrons() {
   }
 }
 
+//drawNucleus(): This function draws the nucleus and applies the imported texture to the protons.
 function drawNucleus() {
   if (isSkyboxLoc) gl.uniform1i(isSkyboxLoc, 0);
   if (isObjectLoc) gl.uniform1i(isObjectLoc, 0);
@@ -907,15 +923,15 @@ function drawNucleus() {
     gl.uniformMatrix4fv(translationLoc, false, flatten(matrix));
 
     if (particle.type === 1) {
-    gl.uniform1i(uUseTextureLoc, 1);
+      gl.uniform1i(uUseTextureLoc, 1);
 
-    gl.activeTexture(gl.TEXTURE11);
-    gl.bindTexture(gl.TEXTURE_2D, protonTexture);
+      gl.activeTexture(gl.TEXTURE11);
+      gl.bindTexture(gl.TEXTURE_2D, protonTexture);
 
-    gl.uniform4fv(baseColorLoc, flatten(vec4(1, 1, 1, 1)));
+      gl.uniform4fv(baseColorLoc, flatten(vec4(1, 1, 1, 1)));
     } else {
-    gl.uniform1i(uUseTextureLoc, 0);
-    gl.uniform4fv(baseColorLoc, flatten(vec4(1, 1, 1, 1)));
+      gl.uniform1i(uUseTextureLoc, 0);
+      gl.uniform4fv(baseColorLoc, flatten(vec4(1, 1, 1, 1)));
     }
 
     bindShadowForObject(matrix);
@@ -934,6 +950,7 @@ function drawNucleus() {
   }
 }
 
+//drawSkybox(): This function draws the skybox with the designated texture.
 function drawSkybox() {
     let vPosition = gl.getAttribLocation(program, "vPosition");
     let vNormal = gl.getAttribLocation( program, "vNormal" );
@@ -961,6 +978,7 @@ function drawSkybox() {
     gl.drawArrays( gl.TRIANGLES, 0, skyboxPoints.length );
 }
 
+//pushSphere(): This function uploads buffers related to the spheres.
 function pushSphere() {
   let vBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
@@ -984,6 +1002,8 @@ function pushSphere() {
 
   gl.vertexAttribPointer(vTexCoordLoc, 2, gl.FLOAT, false, 0, 0);
   gl.enableVertexAttribArray(vTexCoordLoc);
-
 }
+
+
+
 
