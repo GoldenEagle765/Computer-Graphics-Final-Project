@@ -2,83 +2,209 @@
 <html>
 
 <script id="vertex-shader" type="x-shader/x-vertex">
+attribute vec4 vPosition;
+attribute vec4 vNormal;
 
-// assume both position and normal are in homogeneous form
+attribute vec2 vTexCoord;
+varying vec2 fTexCoord;
 
-attribute vec4 vPosition, vNormal;
 uniform mat4 modelViewMatrix;
+uniform mat4 modelViewInverseMatrix;
 uniform mat4 projectionMatrix;
-varying vec3 L, N, V;
-uniform vec4 lightPosition;
 uniform mat4 translation;
+
 uniform bool isSkybox;
+
+uniform bool uShadowPass;
+uniform mat4 uLightViewProj;
+uniform mat4 textureMatrix;
+
+varying vec3 vPosEye;
+varying vec3 vNormalEye;
+varying vec4 v_projectedTexcoord;
+varying vec3 vWorldPos;
+varying vec3 viewDirWorld, N_world;
 
 void main()
 {
-    if (!isSkybox) {
-        //Diffuse
-        //Calculate L
+    vec4 worldPosition = translation * vPosition;
+    vWorldPos = worldPosition.xyz;
+    fTexCoord = vTexCoord;
 
-        vec4 nm = vPosition;
-        //nm.w = 1.0;     //To calculate the lighting vector, we need to convert the normal position
-        vec3 pos = (translation * nm).xyz;
-        L = normalize(lightPosition.xyz - pos);
-
-        //Calculate N
-        //Here, we need to convert the normal direction (not the position)
-        N = normalize(translation * vNormal).xyz;
-
-        //Specular
-        //V = origin - pos = -pos
-        V = normalize(-pos);
+    if (isSkybox) {
+        fTexCoord = vTexCoord;
+        gl_Position = projectionMatrix * modelViewMatrix * translation * vPosition;
     }
 
-    gl_Position = projectionMatrix * modelViewMatrix * translation *  vPosition;
+    else if (uShadowPass) {
+        gl_Position = uLightViewProj * worldPosition;
+    }
+
+    else {
+        mat4 mv = modelViewMatrix * translation;
+
+        vec3 posEye = (mv * vPosition).xyz;
+        vec3 nEye   = normalize((mv * vec4(vNormal.xyz, 0.0)).xyz);
+
+        vPosEye = posEye;
+        vNormalEye = nEye;
+
+        v_projectedTexcoord = textureMatrix * worldPosition;
+
+        vec3 camPosWorld = (modelViewInverseMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        viewDirWorld = vPosition.xyz - camPosWorld;
+        N_world = normalize(vNormal).xyz;
+
+        gl_Position = projectionMatrix * vec4(posEye, 1.0);
+    }
 }
 </script>
 
 <script id="fragment-shader" type="x-shader/x-fragment">
-
 precision mediump float;
 
+
+uniform bool uShadowPass;
+uniform bool isSkybox;
 uniform vec4 lightDiffuse, lightSpecular, lightAmbient;
 uniform vec4 materialDiffuse, materialSpecular, materialAmbient;
 uniform float shininess;
-varying vec3 L, N, V;
-uniform bool isSkybox;
+
+uniform bool isObject; // 1.0 = OBJ/material path, 0.0 = sphere baseColor path
+uniform vec4 baseColor;
+uniform bool uUseTexture;
+
+uniform sampler2D shadowMap;
+uniform bool uShadowsEnabled;
+uniform bool uLightingEnabled;
+
+uniform vec3 uSpotPosWorld;
+uniform vec3 uSpotDirWorld;
+uniform float uSpotCosCutoff;
+uniform float uSpotExponent;
+uniform vec4 uSpotColor;
+uniform vec3 uSpotPosEye;
+uniform vec3 uSpotDirEye;
+uniform vec3 uPointLightPosWorld;
+
+varying vec3 vPosEye;
+varying vec3 vNormalEye;
+varying vec4 v_projectedTexcoord;
+varying vec3 vWorldPos;
+varying vec3 viewDirWorld, N_world;
+
+uniform sampler2D tex1;
+uniform sampler2D tex11;
+uniform sampler2D skyboxTex;
+uniform samplerCube texMap;
+varying vec2 fTexCoord;
+
+
+float shadowFactor() {
+    if (!uShadowsEnabled) return 1.0;
+
+    vec3 proj = v_projectedTexcoord.xyz / v_projectedTexcoord.w;
+
+    if (proj.x < 0.0 || proj.x > 1.0 || proj.y < 0.0 || proj.y > 1.0) return 1.0;
+
+    float closestDepth = texture2D(shadowMap, proj.xy).r;
+
+    float bias = 0.0015;
+    float currentDepth = proj.z - bias;
+
+    return (currentDepth > closestDepth) ? 0.5 : 1.0;
+}
 
 void main()
 {
-    if (!isSkybox) {
-        //Diffuse
-        //Id = Ld kd dot(l • n)
-        vec4 diffuse = lightDiffuse * materialDiffuse * dot(L, N);
+    if (isSkybox) {
+        gl_FragColor = texture2D(skyboxTex, fTexCoord);
+    }
 
-        //Specular
-        //r = (2 (l · n ) n) - l
-        vec3 R = 2.0 * (dot(L, N) * N) - L;
+    else if (uShadowPass) {
+        gl_FragColor = vec4(0.0,0.0,0.0,1.0);
+    }
 
-        //Is = Ls Ks dot(V, R)^a
-        vec4 specular = lightSpecular * materialSpecular * pow(max(dot(V, R), 0.0), shininess);
+    else {
+        vec3 ambient = vec3(0.18);
 
-        //Ambient
-        //Ia = Laka
-        vec4 ambient = lightAmbient * materialAmbient;
+        if (!uLightingEnabled) {
+            vec4 amb = (isObject) ? materialAmbient : baseColor;
+            vec4 outColor = vec4(ambient, 1.0) * amb;
+            outColor.a = amb.a;
+            gl_FragColor = outColor;
+        }
 
-        vec4 fColor = diffuse + specular + ambient;
-        fColor.a = 1.0;
-        gl_FragColor = fColor;
-	}
-	else {
-	    gl_FragColor = texture2D(tex1, fTexCoord);
-	}
+        else {
+            vec3 N = normalize(vNormalEye);
+            vec3 V = normalize(-vPosEye);
+
+
+            vec3 L = normalize(uPointLightPosWorld - vWorldPos);
+
+            float ndotl = max(dot(N, L), 0.0);
+            vec3 R = reflect(-L, N);
+            float spec = pow(max(dot(V, R), 0.0), shininess);
+
+            float s = shadowFactor();
+
+            vec3 diffuseTerm;
+            vec3 specTerm;
+
+            if (isObject) {
+                diffuseTerm = (lightDiffuse.rgb * materialDiffuse.rgb) * ndotl;
+                specTerm = (lightSpecular.rgb * materialSpecular.rgb) * (0.35 * spec);
+                ambient = lightAmbient.rgb * materialAmbient.rgb;
+            } else {
+                diffuseTerm = vec3(ndotl);
+                specTerm    = 0.35 * vec3(spec);
+            }
+
+            vec3 lighting = ambient + s * (diffuseTerm + specTerm);
+
+            vec3 Lspot = normalize(uSpotPosEye - vPosEye);
+            float ndotl_spot = max(dot(N, Lspot), 0.0);
+
+            vec3 Rspot = reflect(-Lspot, N);
+            float spec_spot = pow(max(dot(V, Rspot), 0.0), shininess);
+
+            vec3 lightToFrag = normalize(vWorldPos - uSpotPosWorld);
+            float cosAngle = dot(normalize(uSpotDirWorld), lightToFrag);
+
+            float spotAtten = 0.0;
+            if (cosAngle > uSpotCosCutoff) {
+                spotAtten = pow(cosAngle, uSpotExponent);
+            }
+
+            vec3 spotDiffuse = spotAtten * uSpotColor.rgb * ndotl_spot;
+            vec3 spotSpec    = spotAtten * uSpotColor.rgb * (0.35 * spec_spot);
+
+            lighting += (spotDiffuse + spotSpec);
+
+            vec4 surf;
+            if (isObject) {
+                vec3 refl = reflect(viewDirWorld, N_world);
+                vec4 texColor = textureCube(texMap, refl);
+                surf = vec4(1.0, 1.0, 1.0, 1.0) * 0.5 + texColor * 0.5;
+
+            } else if (uUseTexture) {
+                surf = texture2D(tex11, fTexCoord);
+            } else {
+                surf = baseColor;
+            }
+            vec4 outColor = vec4(lighting, 1.0) * surf;
+            outColor.a = surf.a;
+
+            gl_FragColor = outColor;
+        }
+    }
 }
 </script>
 
 <script type="text/javascript" src="lib/webgl-utils.js"></script>
 <script type="text/javascript" src="lib/initShaders.js"></script>
 <script type="text/javascript" src="lib/MV.js"></script>
-<script type="text/javascript" src="lib/cs4731pjt1.js"></script>
+
 
 <script type="text/javascript" src="object_handling/learn_webgl_obj_to_arrays.js"></script>
 <script type="text/javascript" src="object_handling/learn_webgl_vector3.js"></script>
@@ -88,8 +214,6 @@ void main()
 <script type="text/javascript" src="main.js"></script>
 
 <body>
-<canvas id="gl-canvas" width="512" height="512">
-Epic fail!
-</canvas>
+<canvas id="gl-canvas" width="512" height="512">Epic fail!</canvas>
 </body>
 </html>
